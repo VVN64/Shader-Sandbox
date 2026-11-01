@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shader Sandbox</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/editor.css">
+  <link rel="stylesheet" href="css/graph.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo"></span>Shader Sandbox</div>
+
+    <div class="tb-group">
+      <label class="tb-label" for="example-select">Example</label>
+      <select id="example-select" class="tb-select"></select>
+    </div>
+
+    <div class="tb-group">
+      <button id="btn-play" class="tb-btn" title="Play / pause (Ctrl+P)">❚❚ Pause</button>
+      <button id="btn-reset" class="tb-btn" title="Reset u_time">⟲ Time</button>
+    </div>
+
+    <div class="tb-spacer"></div>
+
+    <div class="tb-group">
+      <button id="btn-toggle-preview" class="tb-btn tb-toggle is-on" title="Show / hide the preview window">Preview</button>
+      <button id="btn-toggle-graph" class="tb-btn tb-toggle is-on" title="Show / hide the graph widget">Graph</button>
+    </div>
+
+    <div class="tb-group">
+      <button id="btn-download" class="tb-btn" title="Download shader as .frag">⤓ .frag</button>
+      <label class="tb-btn" title="Open a .frag / .glsl file">⤒ Open<input id="file-input" type="file" accept=".frag,.glsl,.fs,.txt" hidden></label>
+      <button id="btn-snapshot" class="tb-btn" title="Save preview as PNG">◉ PNG</button>
+      <button id="btn-gif" class="tb-btn" title="Record a 10-second looping GIF of the shader">▶ GIF</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <div id="editor" class="editor-host"></div>
+    <footer class="statusbar">
+      <span id="status" class="status status-ok">● compiled</span>
+      <span id="status-msg" class="status-msg"></span>
+      <span class="tb-spacer"></span>
+      <span class="status-dim">Ctrl+Enter recompile · Ctrl+/ comment · right-click selection / Ctrl+G graph value · drag windows by their title bar</span>
+    </footer>
+  </main>
+
+  <!-- Floating preview window -->
+  <section id="win-preview" class="fwin" data-title="Preview">
+    <div class="fwin-bar">
+      <span class="fwin-title">Preview</span>
+      <span class="fwin-meta" id="preview-meta"></span>
+      <button class="fwin-btn" data-action="collapse" title="Collapse">–</button>
+      <button class="fwin-btn" data-action="close" title="Hide">×</button>
+    </div>
+    <div class="fwin-body preview-body">
+      <canvas id="preview-canvas"></canvas>
+    </div>
+    <div class="fwin-resize" title="Resize"></div>
+  </section>
+
+  <!-- Floating graph window -->
+  <section id="win-graph" class="fwin" data-title="Graph">
+    <div class="fwin-bar">
+      <span class="fwin-title">Graph · y = f(x)</span>
+      <span class="fwin-meta"></span>
+      <button class="fwin-btn" data-action="collapse" title="Collapse">–</button>
+      <button class="fwin-btn" data-action="close" title="Hide">×</button>
+    </div>
+    <div class="fwin-body" id="graph-body"></div>
+    <div class="fwin-resize" title="Resize"></div>
+  </section>
+
+  <script src="js/window-manager.js"></script>
+  <script src="js/editor.js"></script>
+  <script src="js/shader-preview.js"></script>
+  <script src="js/shader-probe.js"></script>
+  <script src="js/graph-widget.js"></script>
+  <script src="js/gif-encoder.js"></script>
+  <script src="js/examples.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

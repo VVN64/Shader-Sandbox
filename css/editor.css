@@ -1,0 +1,207 @@
+/* ShaderSandbox — GLSL editor. Everything is scoped under .sse-editor. */
+
+.sse-editor {
+  --sse-fs: 14px;
+  --sse-lh: 21px;            /* 14px * 1.5, as an exact pixel value */
+  --sse-pad-y: 10px;
+  --sse-pad-x: 14px;
+
+  /* token palette */
+  --sse-kw: #c792ea;
+  --sse-ty: #82aaff;
+  --sse-fn: #89ddff;
+  --sse-num: #f78c6c;
+  --sse-com: #637087;
+  --sse-pre: #ffcb6b;
+  --sse-uni: #c3e88d;
+  --sse-gl: #f07178;
+
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--mono);
+  box-sizing: border-box;
+}
+
+/* ---- gutter ------------------------------------------------------------ */
+.sse-editor .sse-gutter {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+.sse-editor .sse-gutter-inner {
+  padding: var(--sse-pad-y) 0;
+  will-change: transform;
+}
+.sse-editor .sse-ln {
+  position: relative;
+  box-sizing: content-box;
+  width: calc(var(--sse-digits, 2) * 1ch);
+  height: var(--sse-lh);
+  padding: 0 12px 0 22px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: var(--sse-lh);
+  text-align: right;
+  color: var(--text-dim);
+  opacity: 0.5;
+  font-variant-numeric: tabular-nums;
+}
+.sse-editor .sse-ln-active {
+  color: var(--text);
+  opacity: 1;
+}
+.sse-editor .sse-ln-err {
+  color: var(--error);
+  opacity: 1;
+  cursor: help;
+}
+.sse-editor .sse-ln-err::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: var(--error);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--error) 60%, transparent);
+}
+
+/* ---- main text area ---------------------------------------------------- */
+.sse-editor .sse-main {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sse-editor .sse-bands,
+.sse-editor .sse-hl {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.sse-editor .sse-bands-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  will-change: transform;
+}
+.sse-editor .sse-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--sse-lh);
+}
+.sse-editor .sse-band-active {
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+.sse-editor.sse-focused .sse-band-active {
+  background: color-mix(in srgb, var(--text) 5.5%, transparent);
+}
+.sse-editor .sse-band-err {
+  background: color-mix(in srgb, var(--error) 10%, transparent);
+}
+
+/* Shared typography: must be identical on the mirror and the textarea. */
+.sse-editor .sse-text {
+  margin: 0;
+  border: 0;
+  padding: var(--sse-pad-y) var(--sse-pad-x);
+  box-sizing: border-box;
+  font-family: var(--mono);
+  font-size: var(--sse-fs);
+  font-weight: 400;
+  font-style: normal;
+  line-height: var(--sse-lh);
+  letter-spacing: 0;
+  word-spacing: 0;
+  text-indent: 0;
+  text-transform: none;
+  text-align: left;
+  font-kerning: none;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-wrap: normal;
+  word-break: normal;
+  tab-size: 4;
+  -moz-tab-size: 4;
+}
+
+.sse-editor .sse-pre {
+  position: absolute;
+  top: 0;
+  left: 0;
+  min-width: 100%;
+  color: var(--text);
+  background: transparent;
+  will-change: transform;
+}
+.sse-editor .sse-pre code {
+  font: inherit;
+  color: inherit;
+  background: none;
+  padding: 0;
+}
+
+.sse-editor .sse-ta {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  display: block;
+  resize: none;
+  outline: none;
+  overflow: auto;
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--accent);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.sse-editor .sse-ta::selection {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+.sse-editor .sse-ta::-webkit-scrollbar { width: 10px; height: 10px; }
+.sse-editor .sse-ta::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 5px;
+  border: 2px solid var(--panel);
+}
+.sse-editor .sse-ta::-webkit-scrollbar-corner { background: transparent; }
+
+/* ---- tokens ------------------------------------------------------------ */
+.sse-editor .sse-t-kw  { color: var(--sse-kw); }
+.sse-editor .sse-t-ty  { color: var(--sse-ty); }
+.sse-editor .sse-t-fn  { color: var(--sse-fn); }
+.sse-editor .sse-t-num { color: var(--sse-num); }
+.sse-editor .sse-t-com { color: var(--sse-com); font-style: italic; }
+.sse-editor .sse-t-pre { color: var(--sse-pre); }
+.sse-editor .sse-t-uni { color: var(--sse-uni); }
+.sse-editor .sse-t-gl  { color: var(--sse-gl); }
+
+.sse-editor .sse-errmsg {
+  color: color-mix(in srgb, var(--error) 75%, transparent);
+  font-style: italic;
+}
