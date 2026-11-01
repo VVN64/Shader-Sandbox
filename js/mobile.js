@@ -39,6 +39,104 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     return f ? f.apply(null, Array.prototype.slice.call(arguments, 1)) : undefined;
   }
   function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
+  // ------------------------------------------------------------------ number literals (pure, unit-tested)
+  var NUM_RE = /0[xX][0-9a-fA-F]+[uU]?|[A-Za-z_]\w*|(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?[uUfF]?/g;
+
+  /** True when `pos` sits inside a // or block comment (GLSL has no strings, so a plain scan is exact). */
+  function inComment(text, pos) {
+    var i = 0, block = false;
+    while (i < pos) {
+      if (block) {
+        if (text.charAt(i) === '*' && text.charAt(i + 1) === '/') { block = false; i += 2; } else i++;
+      } else if (text.charAt(i) === '/' && text.charAt(i + 1) === '/') {
+        var nl = text.indexOf('\n', i);
+        if (nl < 0 || nl >= pos) return true;
+        i = nl + 1;
+      } else if (text.charAt(i) === '/' && text.charAt(i + 1) === '*') { block = true; i += 2; } else i++;
+    }
+    return block;
+  }
+
+  /** Is the '-' at index i a unary minus? (line start, an operator/opening punctuation, or `return` before it) */
+  function unaryMinusAt(text, i, ls) {
+    var j = i - 1;
+    while (j >= ls && (text.charAt(j) === ' ' || text.charAt(j) === '\t')) j--;
+    if (j < ls) return true;
+    if (/[(,=+\-*\/<>!&|\^%?:\[{;]/.test(text.charAt(j))) return true;
+    return /(^|[^\w])return$/.test(text.slice(Math.max(0, j - 6), j + 1));
+  }
+
+  /**
+   * Find the numeric literal under the caret (or exactly covered by the selection).
+   * Returns { start, end, numStart, text, value, isFloat, isUint, suffix, dec, unary, parenIfNeg } or null.
+   * `start` includes a unary minus; `numStart` is the first digit.
+   */
+  function numAt(text, caret, selEnd) {
+    if (selEnd == null) selEnd = caret;
+    var ls = caret > 0 ? text.lastIndexOf('\n', caret - 1) + 1 : 0;
+    var le = text.indexOf('\n', caret);
+    if (le < 0) le = text.length;
+    if (selEnd > le || selEnd < caret) return null;
+    var line = text.slice(ls, le);
+    var dm = /^\s*#\s*(\w*)/.exec(line);
+    if (dm && dm[1] !== 'define') return null;
+    var re = new RegExp(NUM_RE.source, 'g');
+    var m;
+    while ((m = re.exec(line))) {
+      var t = m[0], c = t.charAt(0);
+      if (/[A-Za-z_]/.test(c) || /^0[xX]/.test(t)) continue;
+      var s = ls + m.index, e = s + t.length;
+      if (c === '.' && s > ls && /[\w)\]]/.test(text.charAt(s - 1))) continue;
+      var unary = s - 1 >= ls && text.charAt(s - 1) === '-' && unaryMinusAt(text, s - 1, ls);
+      var sp = unary ? s - 1 : s;
+      var hit = caret === selEnd ? (caret >= sp && caret <= e) : (selEnd === e && (caret === s || caret === sp));
+      if (!hit) continue;
+      if (inComment(text, s)) return null;
+      var suffix = /[uUfF]$/.test(t) ? t.charAt(t.length - 1) : '';
+      var body = suffix ? t.slice(0, -1) : t;
+      var isUint = suffix === 'u' || suffix === 'U';
+      var isFloat = !isUint && (/[.eE]/.test(body) || suffix === 'f' || suffix === 'F');
+      var parts = body.split(/[eE]/);
+      var mantDec = (parts[0].split('.')[1] || '').length;
+      var exp = parts.length > 1 ? parseInt(parts[1], 10) : 0;
+      var dec = clamp(mantDec - exp, 0, 8);
+      var v = isFloat ? parseFloat(body) : parseInt(body, 10);
+      var k = sp - 1;
+      while (k >= ls && (text.charAt(k) === ' ' || text.charAt(k) === '\t')) k--;
+      return {
+        start: sp, end: e, numStart: s, text: text.slice(sp, e), value: unary ? -v : v,
+        isFloat: isFloat, isUint: isUint, suffix: suffix, dec: dec, unary: unary,
+        parenIfNeg: !unary && k >= ls && /[-+]/.test(text.charAt(k))
+      };
+    }
+    return null;
+  }
+
+  /**
+   * New literal text for `info` after nFine fine steps and nCoarse coarse steps (integer counts, so no
+   * float drift). Floats: fine 0.01 / coarse 0.1; integers: fine 1 / coarse 10.
+   * Returns { text (to write), display (signed number), value, paren }.
+   */
+  function formatNum(info, nFine, nCoarse, fineUsed) {
+    var v, neg, digits;
+    if (info.isFloat) {
+      v = info.value + (nFine + 10 * nCoarse) / 100;
+      var dec = Math.min(8, Math.max(info.dec, fineUsed || nFine ? 2 : 1, 1));
+      digits = Math.abs(v).toFixed(dec);
+      neg = v < 0 && parseFloat(digits) !== 0;
+      v = parseFloat(digits) * (neg ? -1 : 1);
+    } else {
+      v = Math.round(info.value + nFine + 10 * nCoarse);
+      if (info.isUint && v < 0) v = 0;
+      digits = String(Math.abs(v));
+      neg = v < 0;
+    }
+    var lit = digits + info.suffix;
+    var display = (neg ? '-' : '') + lit;
+    var paren = neg && !info.unary && info.parenIfNeg;
+    return { text: paren ? '(-' + lit + ')' : display, display: display, value: v, paren: paren };
+  }
+
   function reducedMotion() {
     try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; }
   }
@@ -76,6 +174,9 @@ window.ShaderSandbox = window.ShaderSandbox || {};
   var restH = 0;               // visual-viewport height with no keyboard
   var kbOpen = false;
   var meterRaf = 0;
+  var bind = null;             // active dial binding: { info, start, end, curText, nf, nc, fineUsed }
+  var compileRaf = 0;
+  var dialUi = null;
 
   // ------------------------------------------------------------------ shell construction
   function build() {
@@ -150,6 +251,9 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     kbTrail.appendChild(kbGraph); kbTrail.appendChild(kbDone);
     kb.appendChild(kbScroll); kb.appendChild(kbTrail);
 
+    // --- number dial tray (sits directly above the accessory bar)
+    var dials = buildDials();
+
     // --- tab bar
     var tabbar = el('nav', 'm-tabbar', { role: 'tablist', 'aria-label': 'Views' });
     var tabLabels = { code: 'Code', preview: 'Preview', graph: 'Graph' };
@@ -165,6 +269,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
 
     shell.appendChild(nav);
     shell.appendChild(stage);
+    shell.appendChild(dials);
     shell.appendChild(kb);
     shell.appendChild(tabbar);
     shell.appendChild(layer);
@@ -175,7 +280,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
       shareBtn: shareBtn, stage: stage, views: views, viewCode: vCode, viewPrev: vPrev, viewGraph: vGraph,
       codeHost: codeHost, pip: pipCard, pipCanvas: pipCanvasHost, prevHost: prevHost, graphHost: graphHost,
       capPlay: capPlay, capReset: capReset, capRead: capRead, banner: banner,
-      bannerText: banner.querySelector('.m-banner-text'), kb: kb, kbGraph: kbGraph, kbDone: kbDone,
+      bannerText: banner.querySelector('.m-banner-text'), kb: kb, dials: dials, kbGraph: kbGraph, kbDone: kbDone,
       tabbar: tabbar, tabBtns: tabBtns, layer: layer
     };
     var views_ = { code: vCode, preview: vPrev, graph: vGraph };
@@ -245,7 +350,8 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     restore('editor');
     body.classList.remove('is-compact');
     root.classList.remove('is-compact-root');
-    shell.classList.remove('kb-open', 'has-kb-bar');
+    bind = null;
+    shell.classList.remove('kb-open', 'has-kb-bar', 'has-dials');
     body.classList.remove('has-banner');
     var g = app().graph;
     if (g && typeof g.setCompact === 'function') g.setCompact(false);
@@ -469,13 +575,235 @@ window.ShaderSandbox = window.ShaderSandbox || {};
   function updateKbBar() {
     if (!built) return;
     var ta = textarea();
-    var focused = !!ta && doc.activeElement === ta && tab === 'code';
+    var inTray = !!bind && !!els.dials && els.dials.contains(doc.activeElement);
+    var focused = !!ta && (doc.activeElement === ta || inTray) && tab === 'code';
     var show = focused && (coarse() || forceKbBar);
     var changed = show !== shell.classList.contains('has-kb-bar');
     shell.classList.toggle('has-kb-bar', show);
     var hasSel = !!ta && ta.selectionStart !== ta.selectionEnd;
     if (els.kbGraph.disabled === hasSel) els.kbGraph.disabled = !hasSel;
+    syncDials(show);
     if (changed) pipLayout(true);
+  }
+
+  // ------------------------------------------------------------------ number dials
+  var DETENT = 10;             // degrees of knob rotation per step (36 per turn)
+  var DEAD = 12;               // px around the knob centre where the pointer angle is too jittery to use
+  var LIN_PX = 8;              // px per detent for the straight-drag fallback
+
+  function tickRing() {
+    var h = '<svg viewBox="0 0 76 76" width="100%" height="100%" aria-hidden="true" focusable="false">';
+    for (var i = 0; i < 36; i++) {
+      var long = i % 6 === 0, a = i * Math.PI / 18, r1 = 34.5, r0 = long ? 28.5 : 31;
+      var sx = Math.sin(a), cy = -Math.cos(a);
+      h += '<line x1="' + (38 + sx * r0).toFixed(2) + '" y1="' + (38 + cy * r0).toFixed(2) + '" x2="' +
+        (38 + sx * r1).toFixed(2) + '" y2="' + (38 + cy * r1).toFixed(2) + '" stroke="' +
+        (i === 0 ? 'rgba(255,255,255,.95)' : long ? 'rgba(235,235,245,.62)' : 'rgba(235,235,245,.3)') +
+        '" stroke-width="' + (long ? 1.6 : 1.1) + '" stroke-linecap="round"/>';
+    }
+    return h + '</svg>';
+  }
+
+  function makeDial(kind) {
+    var col = el('div', 'm-dial-col is-' + kind);
+    var notch = el('span', 'm-dial-notch', { 'aria-hidden': 'true' });
+    var knob = el('div', 'm-dial', {
+      role: 'slider', tabindex: '0', 'aria-label': kind === 'fine' ? 'Fine adjust' : 'Coarse adjust',
+      'aria-valuemin': '-1000000', 'aria-valuemax': '1000000', 'aria-valuenow': '0'
+    });
+    var face = el('span', 'm-dial-face', { 'aria-hidden': 'true' });
+    var ticks = el('span', 'm-dial-ticks', { 'aria-hidden': 'true' });
+    var ring = el('span', 'm-dial-ring');
+    ring.innerHTML = tickRing();
+    ticks.appendChild(ring);
+    var cap = el('span', 'm-dial-cap', { 'aria-hidden': 'true' });
+    knob.appendChild(face); knob.appendChild(ticks); knob.appendChild(cap);
+    var caption = el('span', 'm-dial-caption');
+    col.appendChild(notch); col.appendChild(knob); col.appendChild(caption);
+    var d = { kind: kind, col: col, knob: knob, ring: ring, ticks: ticks, notch: notch, caption: caption, rot: 0 };
+    wireDial(d);
+    return d;
+  }
+
+  function buildDials() {
+    var tray = el('div', 'm-dialtray', { role: 'group', 'aria-label': 'Number dials', 'aria-hidden': 'true' });
+    var fine = makeDial('fine'), coarse_ = makeDial('coarse');
+    var mid = el('div', 'm-dial-mid');
+    var val = el('output', 'm-dial-value');
+    var was = el('span', 'm-dial-was');
+    var reset = keyButton('Reset', 'Reset number to original value', 'm-dial-reset');
+    mid.appendChild(val); mid.appendChild(was); mid.appendChild(reset);
+    tray.appendChild(fine.col); tray.appendChild(mid); tray.appendChild(coarse_.col);
+    // The tray must never take focus from the textarea (that would dismiss the keyboard).
+    tray.addEventListener('pointerdown', function (e) { e.preventDefault(); });
+    tray.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    reset.addEventListener('click', resetBinding);
+    dialUi = { tray: tray, fine: fine, coarse: coarse_, val: val, was: was, reset: reset };
+    return tray;
+  }
+
+  function stepBinding(kind, k) {
+    var b = bind;
+    if (!b || !k) return;
+    if (kind === 'fine') { b.nf += k; b.fineUsed = true; } else b.nc += k;
+    if (b.info.isUint) {                       // never below zero: pull the counts back up so there is no dead zone
+      var v = b.info.value + b.nf + 10 * b.nc;
+      if (v < 0) { if (kind === 'fine') b.nf -= v; else b.nc -= Math.ceil(v / 10); }
+    }
+    applyBinding();
+  }
+
+  function writeBinding(text, f) {
+    var b = bind, ed = app().editor;
+    if (!b || !ed || typeof ed.replaceRangeLive !== 'function') return;
+    var caret = b.start + text.length - (f.paren ? 1 : 0);
+    ed.replaceRangeLive(b.start, b.end, text, caret, caret);
+    b.end = b.start + text.length;
+    b.curText = text;
+    showValue(f);
+    scheduleCompile();
+  }
+  function applyBinding() {
+    var f = formatNum(bind.info, bind.nf, bind.nc, bind.fineUsed);
+    writeBinding(f.text, f);
+  }
+  function resetBinding() {
+    var b = bind;
+    if (!b) return;
+    b.nf = 0; b.nc = 0; b.fineUsed = false;
+    var f = formatNum(b.info, 0, 0, false);
+    f.paren = false;
+    writeBinding(b.info.text, f);
+  }
+
+  function scheduleCompile() {
+    if (compileRaf) return;
+    compileRaf = requestAnimationFrame(function () { compileRaf = 0; call('compile'); });
+  }
+
+  function showValue(f) {
+    var u = dialUi;
+    if (!u) return;
+    if (u.val.textContent !== f.display) u.val.textContent = f.display;
+    u.val.classList.toggle('is-long', f.display.length > 8);
+    [u.fine.knob, u.coarse.knob].forEach(function (k) {
+      k.setAttribute('aria-valuenow', String(f.value));
+      k.setAttribute('aria-valuetext', f.display);
+    });
+  }
+
+  function detentFeedback(d) {
+    if (!reducedMotion() && d.ticks.animate) {
+      d.ticks.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.045)' }, { transform: 'scale(1)' }], { duration: 120, easing: 'ease-out' });
+      d.notch.animate([{ filter: 'brightness(1)' }, { filter: 'brightness(1.8)' }, { filter: 'brightness(1)' }], { duration: 120 });
+    }
+    try { if (navigator.vibrate) navigator.vibrate(4); } catch (e) { /* ignore */ }
+  }
+
+  function setRot(d, deg) {
+    d.rot = deg;
+    d.ring.style.transform = 'rotate(' + deg.toFixed(2) + 'deg)';
+  }
+
+  function wireDial(d) {
+    var st = null;
+    var knob = d.knob;
+    function step(k) { stepBinding(d.kind, k); detentFeedback(d); }
+    function norm(a) { while (a > 180) a -= 360; while (a <= -180) a += 360; return a; }
+    knob.addEventListener('pointerdown', function (e) {
+      if (!bind || (e.button != null && e.button > 0)) return;
+      e.preventDefault();                                   // keep the textarea focused
+      var r = knob.getBoundingClientRect();
+      var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      var dx = e.clientX - cx, dy = e.clientY - cy;
+      var near = Math.hypot(dx, dy) < DEAD;
+      st = { id: e.pointerId, cx: cx, cy: cy, last: near ? null : Math.atan2(dy, dx) * 180 / Math.PI,
+        acc: 0, done: 0, lin: near, sx: e.clientX, sy: e.clientY, rot0: d.rot };
+      try { knob.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      knob.classList.add('is-active');
+    });
+    knob.addEventListener('pointermove', function (e) {
+      if (!st || e.pointerId !== st.id) return;
+      e.preventDefault();
+      if (st.lin) {
+        var mx = e.clientX - st.sx, my = e.clientY - st.sy;
+        var pos = Math.abs(mx) > Math.abs(my) ? mx : -my;     // right / up increases
+        var tl = Math.trunc(pos / LIN_PX);
+        if (tl !== st.done) { var kl = tl - st.done; st.done = tl; step(kl); }
+        setRot(d, st.rot0 + st.done * DETENT);
+        return;
+      }
+      var dx = e.clientX - st.cx, dy = e.clientY - st.cy;
+      if (Math.hypot(dx, dy) < DEAD) return;
+      var a = Math.atan2(dy, dx) * 180 / Math.PI;
+      if (st.last == null) { st.last = a; return; }
+      st.acc += norm(a - st.last);
+      st.last = a;
+      var target = Math.trunc((st.acc + (st.acc < 0 ? -1e-6 : 1e-6)) / DETENT);
+      if (target !== st.done) { var k = target - st.done; st.done = target; step(k); }
+      setRot(d, st.rot0 + st.acc);
+    });
+    function end(e) {
+      if (!st || e.pointerId !== st.id) return;
+      st = null;
+      try { knob.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      knob.classList.remove('is-active');
+    }
+    knob.addEventListener('pointerup', end);
+    knob.addEventListener('pointercancel', end);
+    knob.addEventListener('touchstart', function (e) { e.preventDefault(); }, { passive: false });
+    knob.addEventListener('keydown', function (e) {
+      var k = e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowDown' || e.key === 'ArrowLeft' ? -1 : 0;
+      if (!k) return;
+      e.preventDefault();
+      setRot(d, d.rot + k * DETENT);
+      step(k);
+    });
+  }
+
+  /** Keep the tray in sync with the caret: show it over a number, hide it everywhere else. */
+  function syncDials(active) {
+    if (!dialUi || !compact) return;
+    var ta = textarea();
+    var want = null;
+    if (active && ta) {
+      var s = ta.selectionStart, e = ta.selectionEnd, v = ta.value;
+      if (bind && v.slice(bind.start, bind.end) === bind.curText && s >= bind.start && e <= bind.end) return;
+      want = numAt(v, s, e);
+    }
+    var wasOn = shell.classList.contains('has-dials');
+    if (!want) {
+      bind = null;
+      if (wasOn) { shell.classList.remove('has-dials'); dialUi.tray.setAttribute('aria-hidden', 'true'); }
+      return;
+    }
+    bind = { info: want, start: want.start, end: want.end, curText: want.text, nf: 0, nc: 0, fineUsed: false };
+    var isF = want.isFloat;
+    dialUi.fine.caption.textContent = 'Fine ±' + (isF ? '0.01' : '1');
+    dialUi.coarse.caption.textContent = 'Coarse ±' + (isF ? '0.1' : '10');
+    dialUi.was.textContent = 'was ' + want.text;
+    setRot(dialUi.fine, 0); setRot(dialUi.coarse, 0);
+    showValue(formatNum(want, 0, 0, false));
+    if (!wasOn) {
+      shell.classList.add('has-dials');
+      dialUi.tray.setAttribute('aria-hidden', 'false');
+      requestAnimationFrame(revealCaret);
+      setTimeout(revealCaret, 120);
+      setTimeout(revealCaret, 400);
+    }
+  }
+
+  /** The editor shrank to make room for the tray; scroll the caret line back into view. */
+  function revealCaret() {
+    var ta = textarea();
+    if (!ta || !bind) return;
+    var cs = getComputedStyle(ta);
+    var lh = parseFloat(cs.lineHeight) || 21, pad = parseFloat(cs.paddingTop) || 0;
+    var line = ta.value.slice(0, ta.selectionStart).split('\n').length - 1;
+    var top = pad + line * lh, bottom = top + lh, vis = ta.clientHeight;
+    if (!vis) return;
+    if (top - ta.scrollTop < lh) ta.scrollTop = Math.max(0, top - lh);
+    else if (bottom - ta.scrollTop > vis - lh) ta.scrollTop = bottom - vis + lh * 1.5;
   }
 
   function wireKeyboardBar(scroller, tabKey) {
@@ -512,6 +840,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     if (ta) {
       ta.addEventListener('focus', function () { updateKbBar(); vvUpdate(); });
       ta.addEventListener('blur', function () { setTimeout(function () { updateKbBar(); vvUpdate(); }, 60); });
+      ta.addEventListener('input', function () { bind = null; });     // typing inside a number ends the dial binding
       ['select', 'keyup', 'pointerup', 'touchend', 'input'].forEach(function (ev) {
         ta.addEventListener(ev, function () { setTimeout(updateKbBar, 0); });
       });
@@ -701,7 +1030,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
 
   // ------------------------------------------------------------------ overlays: sheets, menus, alerts
   function inertBackground(on) {
-    [els.nav, els.stage, els.kb, els.tabbar].forEach(function (n) {
+    [els.nav, els.stage, els.dials, els.kb, els.tabbar].forEach(function (n) {
       if (!n) return;
       if (on) n.setAttribute('inert', ''); else n.removeAttribute('inert');
     });
@@ -1020,6 +1349,9 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     sheet: function (o) { return compact ? openSheet(o) : null; },
     pipState: function () { return { corner: pip.c, stash: pip.s, x: pip.x, y: pip.y, w: pip.w, h: pip.h }; },
     forceKeyboardBar: function (on) { forceKbBar = !!on; updateKbBar(); },
+    dialsVisible: function () { return !!shell && shell.classList.contains('has-dials'); },
+    _numAt: numAt,
+    _formatNum: formatNum,
     closeAll: closeAll
   };
 

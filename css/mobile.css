@@ -304,6 +304,128 @@ body.has-banner .m-view-graph { top: 36px; }
 .m-key-act:disabled { color: var(--ios-label-3); opacity: 1; cursor: default; }
 .m-key-done { font-weight: 600; font-size: 17px; letter-spacing: -.408px; }
 
+/* ------------------------------------------------------------------ number dial tray
+ * Two knurled dials (Fine left, Coarse right) and the live value, stacked directly above the accessory bar. */
+.m-dialtray {
+  --dial: 76px;
+  display: none;
+  flex: none;
+  position: relative;
+  align-items: center;
+  justify-content: space-between;
+  height: 112px;
+  padding: 0 calc(var(--safe-right) + 16px) 0 calc(var(--safe-left) + 16px);
+  background: var(--ios-material-thick);
+  -webkit-backdrop-filter: var(--ios-blur);
+  backdrop-filter: var(--ios-blur);
+  touch-action: none;
+}
+.m-dialtray::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px;
+  background: var(--ios-separator); transform: scaleY(.5); transform-origin: 0 0; pointer-events: none;
+}
+.m-shell.has-dials .m-dialtray {
+  display: flex;
+  animation: m-dials-in .36s var(--ios-ease) both;
+}
+@keyframes m-dials-in {
+  from { opacity: 0; transform: translate3d(0, 16px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+.m-dial-col {
+  flex: none;
+  width: 88px;
+  display: flex; flex-direction: column; align-items: center;
+}
+.m-dial-notch {
+  width: 10px; height: 7px;
+  margin-bottom: 3px;
+  background: var(--ios-blue);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  border-radius: 1px;
+}
+.m-dial {
+  position: relative;
+  width: var(--dial); height: var(--dial);
+  border-radius: 50%;
+  touch-action: none;
+  cursor: grab;
+  outline: none;
+  -webkit-user-select: none; user-select: none;
+}
+.m-dial.is-active { cursor: grabbing; }
+.m-dial:focus-visible { box-shadow: 0 0 0 2px var(--ios-bg), 0 0 0 4px var(--ios-blue); }
+.m-dial-face {
+  position: absolute; inset: 0; border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 28%, rgba(255, 255, 255, .07) 0%, rgba(255, 255, 255, 0) 55%),
+    radial-gradient(circle at 50% 50%, #343437 0%, var(--ios-bg-3) 60%, #1e1e20 100%);
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, .65),
+    inset 0 -1px 1px rgba(255, 255, 255, .07),
+    0 1px 0 rgba(255, 255, 255, .08);
+}
+.m-dial-ticks { position: absolute; inset: 0; border-radius: 50%; pointer-events: none; }
+.m-dial-ring { position: absolute; inset: 0; display: block; will-change: transform; }
+.m-dial-ring svg { display: block; }
+.m-dial-cap {
+  position: absolute; inset: 22px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle at 50% 30%, #3c3c3f 0%, #232325 100%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .1);
+}
+.m-dial.is-active .m-dial-cap { background: radial-gradient(circle at 50% 30%, #45454a 0%, #29292c 100%); }
+.m-dial-caption {
+  margin-top: 5px;
+  font: 500 12px/14px var(--ios-font);
+  letter-spacing: 0;
+  color: var(--ios-label-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.m-dial-mid {
+  flex: 1 1 0; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 0 4px;
+}
+.m-dial-value {
+  display: block; max-width: 100%;
+  font: 600 28px/34px var(--ios-mono);
+  letter-spacing: -.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ios-label);
+  white-space: nowrap; overflow: hidden; text-overflow: clip;
+}
+.m-dial-value.is-long { font-size: 22px; }
+.m-dial-was {
+  font: 400 12px/16px var(--ios-font);
+  letter-spacing: 0;
+  color: var(--ios-label-2);
+  font-variant-numeric: tabular-nums;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.m-shell .m-dial-reset {
+  min-width: 64px; height: 44px; margin-top: -4px; margin-bottom: -10px;
+  padding: 0 12px;
+  color: var(--ios-blue);
+  font: 400 17px/22px var(--ios-font);
+  letter-spacing: -.408px;
+}
+.m-shell .m-dial-reset:active { opacity: .4; }
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .m-dialtray { --dial: 56px; height: 88px; }
+  .m-dial-col { width: 72px; }
+  .m-dial-cap { inset: 16px; }
+  .m-dial-notch { height: 6px; margin-bottom: 2px; }
+  .m-dial-caption { margin-top: 3px; font-size: 11px; line-height: 12px; }
+  .m-dial-value { font-size: 24px; line-height: 28px; }
+  .m-dial-value.is-long { font-size: 20px; }
+  .m-dial-was { line-height: 14px; }
+  .m-shell .m-dial-reset { height: 36px; margin-top: 0; margin-bottom: -6px; }
+}
+
 /* ------------------------------------------------------------------ tab bar */
 .m-tabbar {
   flex: none;

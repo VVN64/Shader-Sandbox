@@ -29,6 +29,7 @@ A Book-of-Shaders–style GLSL playground. No build step and no dependencies: op
   - While you code, the preview floats as a picture-in-picture card. Drag it to any corner, flick it to the side to tuck it away, or tap it to go full screen.
   - Compile errors show as a red banner; tap it to jump to the line.
   - A symbol bar above the keyboard has Tab, common GLSL symbols, and **Graph** for the selected text.
+  - **Number dials:** put the cursor on a number (e.g. `1.0`) and two dials appear above the keyboard. Turn **Fine** for small steps (0.01; 1 for whole numbers) and **Coarse** for large ones (0.1; 10 for whole numbers). The code and preview update live as you turn, and **Reset** restores the original value.
   - The graph supports drag to pan, pinch to zoom and double-tap to reset; touch and hold to read values. **Equations** and **Table** switch with a segmented control.
   - Images and GIFs go through the iOS Share sheet (Save Image, Files, AirDrop…).
   - Add it to the Home Screen (Share → Add to Home Screen) to run it full-screen like an app. Offline caching works when the app is served over http(s).

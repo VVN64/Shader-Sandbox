@@ -523,6 +523,20 @@ window.ShaderSandbox = window.ShaderSandbox || {};
         var st = ta.selectionStart, en = ta.selectionEnd;
         replaceRange(st, en, text, st + text.length);
       },
+      /**
+       * Fast, non-undoable replacement for high-frequency edits (e.g. scrubbing a number with a dial).
+       * Keeps focus/keyboard as-is, sets the selection, re-renders and fires onChange once.
+       */
+      replaceRangeLive: function (start, end, text, selStart, selEnd) {
+        var keepTop = ta.scrollTop, keepLeft = ta.scrollLeft;
+        ta.setRangeText(String(text), start, end, 'preserve');
+        if (selStart != null) ta.setSelectionRange(selStart, selEnd != null ? selEnd : selStart);
+        ta.scrollTop = keepTop; ta.scrollLeft = keepLeft;
+        render();
+        updateActiveLine();
+        syncScroll();
+        onChange(ta.value);
+      },
       /** dir > 0: indent (soft tab when nothing is selected); dir < 0: outdent. */
       indentSelection: function (dir) {
         if (dir < 0) outdentSelection();
