@@ -13,6 +13,40 @@
   --radius: 8px;
   --shadow: 0 14px 40px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .4);
   color-scheme: dark;
+
+  /* ---- iOS (HIG) design tokens — used by the compact/mobile UI (body.is-compact) ---- */
+  --ios-bg: #000000;                         /* systemBackground (dark) */
+  --ios-bg-2: #1c1c1e;                       /* secondarySystemBackground / grouped cells */
+  --ios-bg-3: #2c2c2e;                       /* tertiarySystemBackground */
+  --ios-elevated: #1c1c1e;                   /* sheets / popovers */
+  --ios-fill: rgba(118, 118, 128, .24);      /* tertiarySystemFill: segmented control track, search fields */
+  --ios-fill-2: rgba(118, 118, 128, .18);
+  --ios-separator: rgba(84, 84, 88, .6);
+  --ios-label: #ffffff;
+  --ios-label-2: rgba(235, 235, 245, .6);
+  --ios-label-3: rgba(235, 235, 245, .3);
+  --ios-blue: #0a84ff;
+  --ios-red: #ff453a;
+  --ios-green: #30d158;
+  --ios-orange: #ff9f0a;
+  --ios-yellow: #ffd60a;
+  --ios-material: rgba(28, 28, 30, .72);     /* chrome bars, used with --ios-blur */
+  --ios-material-thick: rgba(37, 37, 40, .88);
+  --ios-blur: saturate(180%) blur(20px);
+  --ios-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro", system-ui, "Segoe UI", Roboto, sans-serif;
+  --ios-font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, "Segoe UI", Roboto, sans-serif;
+  --ios-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, "JetBrains Mono", monospace;
+  --ios-tap: 44px;                           /* minimum hit target */
+  --ios-radius: 10px;                        /* grouped inset cells, buttons */
+  --ios-radius-lg: 14px;                     /* cards, PiP */
+  --ios-radius-sheet: 12px;
+  --ios-ease: cubic-bezier(.32, .72, 0, 1);  /* UIKit-like sheet/spring curve */
+  --ios-dur: .42s;
+  /* type scale (pt == CSS px): body 17, callout 16, subhead 15, footnote 13, caption 12, title3 20, large title 34 */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
 }
 
 * { box-sizing: border-box; }

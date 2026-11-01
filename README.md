@@ -24,6 +24,14 @@ A Book-of-Shaders–style GLSL playground. No build step and no dependencies: op
   - Frames are rendered off-screen at exact times, so playback is smooth regardless of how fast your machine is, and the preview keeps running.
   - Options: width (320/480/640), fps (10/20/25), start at the current time or t = 0, colours (32–255) and dithering.
   - Shaders where every pixel changes every frame (like Plasma) make big GIFs. Use 320px, fewer colours or 10 fps to keep them small.
+- **On phones** (narrow screens, or landscape phones), the app switches to an iOS-style interface that follows Apple's Human Interface Guidelines:
+  - A tab bar with **Code / Preview / Graph**, and a navigation bar with the example picker, play/pause and a **Share** button (Record GIF…, Share Image…, Save / Open Shader File).
+  - While you code, the preview floats as a picture-in-picture card. Drag it to any corner, flick it to the side to tuck it away, or tap it to go full screen.
+  - Compile errors show as a red banner; tap it to jump to the line.
+  - A symbol bar above the keyboard has Tab, common GLSL symbols, and **Graph** for the selected text.
+  - The graph supports drag to pan, pinch to zoom and double-tap to reset; touch and hold to read values. **Equations** and **Table** switch with a segmented control.
+  - Images and GIFs go through the iOS Share sheet (Save Image, Files, AirDrop…).
+  - Add it to the Home Screen (Share → Add to Home Screen) to run it full-screen like an app. Offline caching works when the app is served over http(s).
 - Window positions, your code and graphed values are saved in `localStorage`.
 
 Shortcuts: `Ctrl+Enter` recompile · `Ctrl+G` graph selection · `Ctrl+P` play/pause · `Ctrl+/` toggle comment · `Tab`/`Shift+Tab` indent/outdent.

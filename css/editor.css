@@ -205,3 +205,37 @@
   color: color-mix(in srgb, var(--error) 75%, transparent);
   font-style: italic;
 }
+
+/* ---- reveal flash (revealLine) ------------------------------------------ */
+.sse-editor .sse-flash { animation: sse-flash .9s ease-out 1; }
+@keyframes sse-flash {
+  0%   { background: color-mix(in srgb, var(--ios-red, #ff453a) 35%, transparent); }
+  100% { background: inherit; }
+}
+@media (prefers-reduced-motion: reduce) { .sse-editor .sse-flash { animation: none; } }
+
+/* ---- compact (phone) ------------------------------------------------------
+   16px text stops iOS Safari from zooming in when the editor gets focus. */
+body.is-compact .sse-editor {
+  --sse-fs: 16px;
+  --sse-lh: 24px;
+  --sse-pad-y: 12px;
+  --sse-pad-x: 12px;
+  background: var(--ios-bg);
+}
+body.is-compact .sse-editor .sse-gutter {
+  background: var(--ios-bg);
+  border-right: 0.5px solid var(--ios-separator);
+}
+body.is-compact .sse-editor .sse-ln {
+  padding: 0 8px 0 12px;
+  font-size: 13px;
+}
+body.is-compact .sse-editor .sse-ta {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scrollbar-width: none;
+}
+body.is-compact .sse-editor .sse-ta::-webkit-scrollbar { display: none; }

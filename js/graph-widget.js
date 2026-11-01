@@ -276,6 +276,13 @@ window.ShaderSandbox = window.ShaderSandbox || {};
   var COLOR_RE = /^#[0-9a-fA-F]{3,8}$/;
   var HELP_TITLE = 'Wheel: zoom · Shift+wheel or the scrollbar: scroll horizontally · Drag: pan · ' +
     'Double-click: reset\nCtrl+wheel: zoom x only · Alt+wheel: zoom y only · ←/→: scroll · Home: reset';
+  var HELP_ROWS_TOUCH = [
+    ['Drag', 'pan'],
+    ['Pinch', 'zoom'],
+    ['Double-tap', 'reset view'],
+    ['Touch & hold', 'read values'],
+    ['y1, y2, …', 'use another line, e.g. step(y3, 1.0)']
+  ];
   var HELP_ROWS = [
     ['Wheel', 'zoom around the cursor'],
     ['Shift+wheel / scrollbar', 'scroll horizontally'],
@@ -469,7 +476,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
 
     var gStep = el('label', 'sgw-group');
     gStep.appendChild(spanText('sgw-lbl', 'Step'));
-    var stepInput = el('input', 'sgw-num sgw-step', { type: 'number', min: '0.001', step: '0.01', title: 'Table x interval (min 0.001)' });
+    var stepInput = el('input', 'sgw-num sgw-step', { type: 'number', inputmode: 'decimal', min: '0.001', step: '0.01', title: 'Table x interval (min 0.001)' });
     stepInput.value = String(step);
     gStep.appendChild(stepInput);
     toolbar.appendChild(gStep);
@@ -497,8 +504,14 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     var readout = el('div', 'sgw-readout');
     var helpPop = el('div', 'sgw-helppop');
     helpPop.hidden = true;
+    HELP_ROWS_TOUCH.forEach(function (r) {
+      var d = el('div', 'sgw-helprow sgw-help-touch');
+      d.appendChild(spanText('sgw-helpkey', r[0]));
+      d.appendChild(spanText('', r[1]));
+      helpPop.appendChild(d);
+    });
     HELP_ROWS.forEach(function (r) {
-      var d = el('div', 'sgw-helprow');
+      var d = el('div', 'sgw-helprow sgw-help-desk');
       d.appendChild(spanText('sgw-helpkey', r[0]));
       d.appendChild(spanText('', r[1]));
       helpPop.appendChild(d);
@@ -551,7 +564,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     probeHead.appendChild(spanText('sgw-stitle', 'Shader values'));
     var gRowY = el('label', 'sgw-group sgw-rowyg', { title: ROWY_TIP });
     gRowY.appendChild(spanText('sgw-lbl', 'row y'));
-    var rowYInput = el('input', 'sgw-num sgw-rowy', { type: 'number', min: '0', max: '1', step: '0.01', title: ROWY_TIP, 'aria-label': 'Probe row y (0 to 1)' });
+    var rowYInput = el('input', 'sgw-num sgw-rowy', { type: 'number', inputmode: 'decimal', min: '0', max: '1', step: '0.01', title: ROWY_TIP, 'aria-label': 'Probe row y (0 to 1)' });
     rowYInput.value = String(rowY);
     gRowY.appendChild(rowYInput);
     probeHead.appendChild(gRowY);
@@ -568,9 +581,18 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     table.appendChild(thead); table.appendChild(tbody);
     tableWrap.appendChild(table);
 
+    var tableBar = el('div', 'sgw-tbar');
     side.appendChild(list);
+    side.appendChild(tableBar);
     side.appendChild(tableWrap);
+    var ctabs = el('div', 'sgw-ctabs', { role: 'tablist', 'aria-label': 'Graph panel' });
+    var ctEq = el('button', 'sgw-on', { type: 'button', role: 'tab', 'aria-selected': 'true' });
+    ctEq.textContent = 'Equations';
+    var ctTable = el('button', '', { type: 'button', role: 'tab', 'aria-selected': 'false' });
+    ctTable.textContent = 'Table';
+    ctabs.appendChild(ctEq); ctabs.appendChild(ctTable);
     main.appendChild(gcol);
+    main.appendChild(ctabs);
     main.appendChild(split);
     main.appendChild(side);
     root.appendChild(main);
@@ -602,6 +624,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
       var cb = el('input', 'sgw-vis', { type: 'checkbox' });
       cb.checked = L.visible;
       cb.style.accentColor = L.color;
+      cb.style.setProperty('--c', L.color);
       var rm = el('button', 'sgw-rm', { type: 'button' });
       rm.textContent = '✕';
       row.appendChild(sw); row.appendChild(lab); row.appendChild(inp); row.appendChild(cb); row.appendChild(rm);
@@ -793,6 +816,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
         var cb = el('input', 'sgw-vis', { type: 'checkbox', 'data-pid': p.id, 'data-ci': String(i) });
         cb.checked = p.vis[i];
         cb.style.accentColor = c.color;
+        cb.style.setProperty('--c', c.color);
         lab.appendChild(sw); lab.appendChild(nm); lab.appendChild(cb);
         lab.appendChild(el('span', 'sgw-rmgap'));
         lab.classList.toggle('sgw-hidden', !p.vis[i]);
@@ -1471,6 +1495,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
       var left = hover.cx + 14, top = hover.cy + 14;
       if (left + rw > pw - 4) left = hover.cx - rw - 14;
       if (top + rh > ph - 4) top = hover.cy - rh - 14;
+      if (compact) { left = hover.cx > pw / 2 ? 8 : pw - rw - 8; top = 8; }  // keep clear of the finger
       readout.style.left = Math.max(4, left) + 'px';
       readout.style.top = Math.max(4, top) + 'px';
     }
@@ -1478,7 +1503,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     /* ---------------- sizing ---------------- */
     function sideMax(mainW) { return Math.max(SIDE_MIN, Math.floor(mainW * SIDE_MAX_FRAC)); }
     function applySideWidth() {
-      if (root.classList.contains('sgw-narrow')) { side.style.width = ''; return; }
+      if (compact || root.classList.contains('sgw-narrow')) { side.style.width = ''; return; }
       var mw = main.clientWidth;
       if (!mw) return;
       var w = sideW == null ? clampN(Math.round(mw * 0.4), SIDE_MIN, SIDE_DEFAULT) : sideW;
@@ -1489,7 +1514,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
 
     function resize() {
       if (destroyed) return;
-      root.classList.toggle('sgw-narrow', root.clientWidth > 0 && root.clientWidth < NARROW_PX);
+      root.classList.toggle('sgw-narrow', !compact && root.clientWidth > 0 && root.clientWidth < NARROW_PX);
       applySideWidth();
       readTheme();
       dpr = window.devicePixelRatio || 1;
@@ -1630,6 +1655,34 @@ window.ShaderSandbox = window.ShaderSandbox || {};
       requestRender();
     });
 
+    var compact = false, compactPanel = 'list';
+    function setCompactPanel(k) {
+      compactPanel = k === 'table' ? 'table' : 'list';
+      side.classList.toggle('sgw-show-table', compactPanel === 'table');
+      ctEq.classList.toggle('sgw-on', compactPanel === 'list');
+      ctTable.classList.toggle('sgw-on', compactPanel === 'table');
+      ctEq.setAttribute('aria-selected', String(compactPanel === 'list'));
+      ctTable.setAttribute('aria-selected', String(compactPanel === 'table'));
+      if (compactPanel === 'table') tableDirty = true;
+      requestRender();
+    }
+    on(ctEq, 'click', function () { setCompactPanel('list'); });
+    on(ctTable, 'click', function () { setCompactPanel('table'); });
+    function setCompact(v) {
+      v = !!v;
+      if (v === compact) return;
+      compact = v;
+      root.classList.toggle('sgw-compact', compact);
+      // Step only affects the table: on phones it lives above the table as "Interval"
+      var stepLbl = gStep.querySelector('.sgw-lbl');
+      if (compact) { tableBar.appendChild(gStep); if (stepLbl) stepLbl.textContent = 'Interval'; }
+      else { toolbar.insertBefore(gStep, gT); if (stepLbl) stepLbl.textContent = 'Step'; }
+      setHelp(false);
+      if (!compact) side.classList.remove('sgw-show-table');
+      else setCompactPanel(compactPanel);
+      resize();
+    }
+
     function setHelp(open) {
       helpPop.hidden = !open;
       helpBtn.classList.toggle('sgw-on', open);
@@ -1644,7 +1697,107 @@ window.ShaderSandbox = window.ShaderSandbox || {};
       return { cx: e.clientX - r.left, cy: e.clientY - r.top, w: r.width, h: r.height };
     }
 
+    /* ---- touch: one-finger pan, pinch zoom, double-tap reset, touch-and-hold scrub ---- */
+    var touches = {};          // pointerId -> { cx, cy }
+    var tstate = null;         // { mode: 'pending' | 'pan' | 'scrub' | 'pinch', ... }
+    var holdTimer = 0, lastTap = 0, lastTapX = 0, lastTapY = 0;
+    function touchCount() { return Object.keys(touches).length; }
+    function setHoverAt(cx, cy) {
+      var r = canvas.getBoundingClientRect();
+      hover = { x: worldX(cx, r.width), src: 'canvas', cx: cx, cy: cy };
+      syncTableHighlight();
+      requestRender();
+    }
+    function startPinch() {
+      var ids = Object.keys(touches), a = touches[ids[0]], b = touches[ids[1]];
+      var r = canvas.getBoundingClientRect();
+      var mx = (a.cx + b.cx) / 2, my = (a.cy + b.cy) / 2;
+      tstate = {
+        mode: 'pinch', w: r.width, h: r.height,
+        d0: Math.max(12, Math.hypot(a.cx - b.cx, a.cy - b.cy)),
+        v0: { xmin: view.xmin, xmax: view.xmax, ymin: view.ymin, ymax: view.ymax },
+        wx: worldX(mx, r.width), wy: view.ymax - (my / r.height) * (view.ymax - view.ymin)
+      };
+      if (hover) { hover = null; syncTableHighlight(); }
+      plot.classList.remove('sgw-scrubbing');
+    }
+    function touchDown(e) {
+      var p = canvasPoint(e);
+      touches[e.pointerId] = { cx: p.cx, cy: p.cy };
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      e.preventDefault();
+      clearTimeout(holdTimer);
+      var n = touchCount();
+      if (n === 1) {
+        tstate = { mode: 'pending', id: e.pointerId, sx: p.cx, sy: p.cy, lx: p.cx, ly: p.cy };
+        holdTimer = setTimeout(function () {
+          if (tstate && tstate.mode === 'pending') {
+            tstate.mode = 'scrub';
+            plot.classList.add('sgw-scrubbing');
+            setHoverAt(tstate.lx, tstate.ly);
+          }
+        }, 380);
+      } else if (n === 2) {
+        startPinch();
+      }
+    }
+    function touchMove(e) {
+      if (!touches[e.pointerId]) return;
+      var p = canvasPoint(e);
+      touches[e.pointerId] = { cx: p.cx, cy: p.cy };
+      if (!tstate) return;
+      if (tstate.mode === 'pinch') {
+        var ids = Object.keys(touches);
+        if (ids.length < 2) return;
+        var a = touches[ids[0]], b = touches[ids[1]];
+        var d = Math.max(12, Math.hypot(a.cx - b.cx, a.cy - b.cy));
+        var mx = (a.cx + b.cx) / 2, my = (a.cy + b.cy) / 2;
+        var f = tstate.d0 / d, v0 = tstate.v0;
+        var xr = clampN((v0.xmax - v0.xmin) * f, 1e-6, 1e6), yr = clampN((v0.ymax - v0.ymin) * f, 1e-6, 1e6);
+        var xmin = tstate.wx - (mx / tstate.w) * xr;
+        var ymax = tstate.wy + (my / tstate.h) * yr;
+        setView({ xmin: xmin, xmax: xmin + xr, ymin: ymax - yr, ymax: ymax });
+        return;
+      }
+      if (e.pointerId !== tstate.id) return;
+      if (tstate.mode === 'scrub') { tstate.lx = p.cx; tstate.ly = p.cy; setHoverAt(p.cx, p.cy); return; }
+      if (tstate.mode === 'pending') {
+        if (Math.hypot(p.cx - tstate.sx, p.cy - tstate.sy) < 8) { tstate.lx = p.cx; tstate.ly = p.cy; return; }
+        tstate.mode = 'pan';
+        clearTimeout(holdTimer);
+        plot.classList.add('sgw-dragging');
+      }
+      if (p.w > 0 && p.h > 0) {
+        var dxw = (p.cx - tstate.lx) / p.w * (view.xmax - view.xmin);
+        var dyw = (p.cy - tstate.ly) / p.h * (view.ymax - view.ymin);
+        setView({ xmin: view.xmin - dxw, xmax: view.xmax - dxw, ymin: view.ymin + dyw, ymax: view.ymax + dyw });
+      }
+      tstate.lx = p.cx; tstate.ly = p.cy;
+    }
+    function touchUp(e) {
+      if (!touches[e.pointerId]) return;
+      delete touches[e.pointerId];
+      try { canvas.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      clearTimeout(holdTimer);
+      var n = touchCount();
+      if (n === 1 && tstate && tstate.mode === 'pinch') {   // keep panning with the remaining finger
+        var id = Object.keys(touches)[0], q = touches[id];
+        tstate = { mode: 'pan', id: +id, sx: q.cx, sy: q.cy, lx: q.cx, ly: q.cy };
+        return;
+      }
+      if (n > 0) return;
+      if (tstate && tstate.mode === 'pending' && e.type === 'pointerup') {   // a tap
+        var now = performance.now(), p = canvasPoint(e);
+        if (now - lastTap < 320 && Math.hypot(p.cx - lastTapX, p.cy - lastTapY) < 30) { resetView(); lastTap = 0; }
+        else { lastTap = now; lastTapX = p.cx; lastTapY = p.cy; }
+      }
+      if (tstate && tstate.mode === 'scrub') { hover = null; syncTableHighlight(); requestRender(); }
+      plot.classList.remove('sgw-scrubbing', 'sgw-dragging');
+      tstate = null;
+    }
+
     on(canvas, 'pointermove', function (e) {
+      if (e.pointerType === 'touch') { touchMove(e); return; }
       var p = canvasPoint(e);
       hover = { x: worldX(p.cx, p.w), src: 'canvas', cx: p.cx, cy: p.cy };
       if (drag && p.w > 0 && p.h > 0) {
@@ -1656,11 +1809,12 @@ window.ShaderSandbox = window.ShaderSandbox || {};
       if (!animating()) syncTableHighlight();
       requestRender();
     });
-    on(canvas, 'pointerleave', function () {
-      if (drag) return;
+    on(canvas, 'pointerleave', function (e) {
+      if (drag || e.pointerType === 'touch') return;
       if (hover && hover.src === 'canvas') { hover = null; syncTableHighlight(); requestRender(); }
     });
     on(canvas, 'pointerdown', function (e) {
+      if (e.pointerType === 'touch') { touchDown(e); return; }
       if (e.button !== 0) return;
       var p = canvasPoint(e);
       drag = { cx: p.cx, cy: p.cy, id: e.pointerId };
@@ -1670,6 +1824,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
       e.preventDefault();
     });
     function endDrag(e) {
+      if (e && e.pointerType === 'touch') { touchUp(e); return; }
       if (!drag) return;
       try { canvas.releasePointerCapture(drag.id); } catch (err) { /* ignore */ }
       drag = null;
@@ -1678,7 +1833,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     }
     on(canvas, 'pointerup', endDrag);
     on(canvas, 'pointercancel', endDrag);
-    on(canvas, 'dblclick', resetView);
+    on(canvas, 'dblclick', function (e) { if (e.pointerType !== 'touch') resetView(); });
 
     on(canvas, 'wheel', function (e) {
       e.preventDefault();  // never scroll / zoom the page
@@ -1887,6 +2042,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
 
     return {
       resize: resize,
+      setCompact: setCompact,
       setProbes: setProbes,
       /** read-only copy of the current view rectangle (debug/test helper) */
       getView: function () { return { xmin: view.xmin, xmax: view.xmax, ymin: view.ymin, ymax: view.ymax }; },

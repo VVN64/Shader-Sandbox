@@ -516,7 +516,35 @@ window.ShaderSandbox = window.ShaderSandbox || {};
         return { text: v.slice(s, e), start: s, end: e, line: line,
                  column: s - before.lastIndexOf('\n') };
       },
-      getTextarea: function () { return ta; }
+      getTextarea: function () { return ta; },
+      /** Insert text at the caret / over the selection (undo-friendly). */
+      insertText: function (text) {
+        text = String(text == null ? '' : text);
+        var st = ta.selectionStart, en = ta.selectionEnd;
+        replaceRange(st, en, text, st + text.length);
+      },
+      /** dir > 0: indent (soft tab when nothing is selected); dir < 0: outdent. */
+      indentSelection: function (dir) {
+        if (dir < 0) outdentSelection();
+        else if (ta.selectionStart === ta.selectionEnd) insertSoftTab();
+        else indentSelection();
+      },
+      /** Select line n (1-based) and scroll it into view, without forcing the keyboard open. */
+      revealLine: function (n) {
+        var v = ta.value, lines = v.split('\n');
+        n = Math.max(1, Math.min(lines.length, Math.floor(n) || 1));
+        var start = 0;
+        for (var i = 0; i < n - 1; i++) start += lines[i].length + 1;
+        ta.setSelectionRange(start, start + lines[n - 1].length);
+        var target = padTop + (n - 1) * lineHeight - ta.clientHeight / 3;
+        ta.scrollTop = Math.max(0, target);
+        ta.scrollLeft = 0;
+        syncScroll();
+        updateActiveLine(true);
+        activeBand.classList.remove('sse-flash');
+        void activeBand.offsetWidth;            // restart the flash animation
+        activeBand.classList.add('sse-flash');
+      }
     };
   };
 })(window.ShaderSandbox);

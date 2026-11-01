@@ -131,3 +131,49 @@ setProbes(probes: Array<{
 }>): void,
 invalidate(): void                 // probe data changed (time ticked / mouse moved / recompiled): resample + redraw next rAF
 ```
+
+---
+
+# Feature 3 — Compact (phone) UI following Apple's Human Interface Guidelines
+
+Desktop layout stays exactly as is. A phone-sized viewport switches to a native-feeling iOS-style shell.
+
+**Compact mode** = `matchMedia('(max-width: 700px), (max-height: 500px) and (pointer: coarse)')`. The shell
+(`js/mobile.js`) toggles `body.is-compact` live (rotation / resize) and re-parents existing elements; all compact
+CSS is scoped under `body.is-compact` in `css/mobile.css` (graph styles in `css/graph.css` under `.sgw-compact`).
+Design tokens: the `--ios-*` and `--safe-*` variables on `:root` in `css/base.css` (dark appearance only).
+
+## Shell structure (owned by `js/mobile.js` + `css/mobile.css`, built in JS on first enter)
+- **Navigation bar** (top, translucent material, safe-area aware): title button = current example name + chevron
+  (opens example menu/sheet), trailing: Play/Pause, Share (action sheet: Record GIF…, Share PNG…, Save .frag, Open File…).
+- **Compile status**: error banner under the nav bar (red, first error, tap → `editor.revealLine(line)`).
+- **Tab bar** (bottom, material, safe-area aware, 49pt + inset): Code · Preview · Graph.
+- **Code tab**: hosts `#editor`; a **PiP preview card** (the same `#preview-canvas`) floats over it — draggable,
+  snaps to the nearest corner with momentum, can be flicked to the side edge to stash; tap → Preview tab.
+- **Preview tab**: `#preview-canvas` full-bleed; floating control capsule (play/pause, restart time, time/fps readout).
+- **Graph tab**: hosts `#graph-body` (the graph widget root) and calls `graph.setCompact(true)`.
+- **Keyboard accessory bar** above the iOS keyboard while the editor is focused (visualViewport-positioned):
+  Tab, common GLSL symbols, and a **Graph** button enabled when the editor has a selection (`NS.app.graphSelection()`).
+- **Sheets**: bottom sheets with grabber, swipe-down to dismiss, backdrop; used for GIF recorder (`NS.app.mountGifPanel`),
+  examples list, action sheets, alerts (replace native `confirm`).
+- Desktop chrome (`.topbar`, `.statusbar`, `.fwin` windows, `.gif-panel` popover, `.ctx-menu`) is hidden in compact mode.
+- On leaving compact mode everything is moved back and `graph.setCompact(false)`, `preview.resize()`, `editor.refresh()`.
+
+## `NS.app` API used by the shell (implemented in `js/app.js`)
+```js
+togglePlay(), isPlaying(), resetTime()
+onStatus(cb)        // cb({ ok, errors:[{line,message}] }) after every compile; also called immediately with current state
+onPlayState(cb)     // cb(isPlaying) whenever it changes; called immediately
+exampleNames()      // ['Hello gradient', ...]
+currentExample()    // index, or -1 when the code isn't an unmodified example
+loadExample(i, force) // returns false (and does nothing) if it would overwrite user-edited code and !force
+downloadFrag(), openFile()
+sharePNG()          // Web Share sheet with a PNG file if supported, else download; returns Promise
+mountGifPanel(container) // renders the GIF recorder UI into container (embedded mode: no auto-download,
+                         // result offers "Share…" via Web Share files API or "Save"); returns { unmount() }
+graphSelection(expandWord) // graph the editor selection (or word at caret); returns bool
+toast(msg, isErr)
+editor, preview, graph, windows   // existing objects
+```
+Editor additions: `editor.insertText(str)` (undo-friendly), `editor.revealLine(n)`, `editor.indentSelection(dir)`.
+Graph addition: `graph.setCompact(bool)`.
