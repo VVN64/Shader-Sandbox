@@ -12,6 +12,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
   var MQ = '(max-width: 700px), (max-height: 500px) and (pointer: coarse)';
   var TAB_KEY = 'shadersandbox.m.tab';
   var PIP_KEY = 'shadersandbox.m.pip';
+  var KB_KEY = 'shadersandbox.m.kb';      // 'code' (on-screen code keyboard, default) | 'system' (plain string)
   var TABS = ['code', 'preview', 'graph'];
 
   var doc = document;
@@ -158,7 +159,9 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     restart: '<path d="M4.6 12a7.4 7.4 0 1 0 2.3-5.4"/><path d="M4.4 4.2v4.4h4.4"/>',
     warn: '<path d="M12 3.6 2.9 19.4h18.2z"/><path d="M12 10v4.2"/><path d="M12 16.9v.1"/>',
     check: '<path d="m4.8 12.6 4.6 4.6 9.8-10.4"/>',
-    graphkey: '<path d="M4.5 4.5v15h15"/><path d="M7.6 15.2c2.3-8.2 4.2-8.2 5.7-2.6 1.2 4.3 3 2.3 4.7-4.6"/>'
+    graphkey: '<path d="M4.5 4.5v15h15"/><path d="M7.6 15.2c2.3-8.2 4.2-8.2 5.7-2.6 1.2 4.3 3 2.3 4.7-4.6"/>',
+    keyboard: '<rect x="2.6" y="5.6" width="18.8" height="12.8" rx="2.4"/>' +
+      '<path d="M6.4 9.4h.01M9.4 9.4h.01M12.4 9.4h.01M15.4 9.4h.01M18 9.4h-.4M6.4 12.2h.01M9.4 12.2h.01M12.4 12.2h.01M15.4 12.2h.01M18 12.2h-.4M8.2 15h7.6"/>'
   };
 
   // ------------------------------------------------------------------ state
@@ -177,6 +180,8 @@ window.ShaderSandbox = window.ShaderSandbox || {};
   var bind = null;             // active dial binding: { info, start, end, curText, nf, nc, fineUsed }
   var compileRaf = 0;
   var dialUi = null;
+  var kbMode = loadKbMode();   // 'code' | 'system'
+  var ckbApi = null;           // NS.codeKeyboard instance
 
   // ------------------------------------------------------------------ shell construction
   function build() {
@@ -247,9 +252,16 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     kbGraph.innerHTML = svg(IC.graphkey, 18) + '<span>Graph</span>';
     kbGraph.disabled = true;
     var kbDone = keyButton('Done', 'Dismiss keyboard', 'm-key m-key-act m-key-done');
+    var kbSwitch = keyButton('', 'Use system keyboard', 'm-key m-key-act m-key-switch');
     var kbTrail = el('div', 'm-kb-trail');
-    kbTrail.appendChild(kbGraph); kbTrail.appendChild(kbDone);
+    kbTrail.appendChild(kbSwitch); kbTrail.appendChild(kbGraph); kbTrail.appendChild(kbDone);
     kb.appendChild(kbScroll); kb.appendChild(kbTrail);
+
+    // --- on-screen code keyboard (replaces the native keyboard; between the accessory bar and the tab bar)
+    var ckb = el('div', 'm-ckb', { 'aria-hidden': 'true' });
+    if (NS.codeKeyboard && typeof NS.codeKeyboard.createCodeKeyboard === 'function') {
+      try { ckbApi = NS.codeKeyboard.createCodeKeyboard(ckb, { onOp: applyKeyOp }); } catch (e) { ckbApi = null; }
+    }
 
     // --- number dial tray (sits directly above the accessory bar)
     var dials = buildDials();
@@ -271,6 +283,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     shell.appendChild(stage);
     shell.appendChild(dials);
     shell.appendChild(kb);
+    shell.appendChild(ckb);
     shell.appendChild(tabbar);
     shell.appendChild(layer);
     body.appendChild(shell);
@@ -281,7 +294,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
       codeHost: codeHost, pip: pipCard, pipCanvas: pipCanvasHost, prevHost: prevHost, graphHost: graphHost,
       capPlay: capPlay, capReset: capReset, capRead: capRead, banner: banner,
       bannerText: banner.querySelector('.m-banner-text'), kb: kb, dials: dials, kbGraph: kbGraph, kbDone: kbDone,
-      tabbar: tabbar, tabBtns: tabBtns, layer: layer
+      kbSwitch: kbSwitch, ckb: ckbApi ? ckb : null, tabbar: tabbar, tabBtns: tabBtns, layer: layer
     };
     var views_ = { code: vCode, preview: vPrev, graph: vGraph };
     els.viewMap = views_;
@@ -331,6 +344,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     if (g && typeof g.setCompact === 'function') g.setCompact(true);
     restH = 0;
     body.classList.toggle('has-banner', !statusState.ok && (statusState.errors || []).length > 0);
+    syncInputMode();
     setTab(tab, true);
     attachViewport();
     pipLayout(false);
@@ -345,13 +359,15 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     stopMeter();
     var ta = textarea();
     if (ta && doc.activeElement === ta) ta.blur();
+    if (ta) ta.removeAttribute('inputmode');           // desktop keeps the native keyboard behaviour
     restore('graph');
     restore('canvas');
     restore('editor');
     body.classList.remove('is-compact');
     root.classList.remove('is-compact-root');
     bind = null;
-    shell.classList.remove('kb-open', 'has-kb-bar', 'has-dials');
+    shell.classList.remove('kb-open', 'has-kb-bar', 'has-dials', 'has-ckb');
+    if (els.ckb) els.ckb.setAttribute('aria-hidden', 'true');
     body.classList.remove('has-banner');
     var g = app().graph;
     if (g && typeof g.setCompact === 'function') g.setCompact(false);
@@ -578,12 +594,90 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     var inTray = !!bind && !!els.dials && els.dials.contains(doc.activeElement);
     var focused = !!ta && (doc.activeElement === ta || inTray) && tab === 'code';
     var show = focused && (coarse() || forceKbBar);
-    var changed = show !== shell.classList.contains('has-kb-bar');
+    // The code keyboard rides along with the accessory bar. If a native keyboard is detected anyway (a browser
+    // that ignores inputmode="none"), step aside so the two never stack.
+    var ckbOn = show && kbMode === 'code' && !!els.ckb && !kbOpen;
+    var changed = show !== shell.classList.contains('has-kb-bar') || ckbOn !== shell.classList.contains('has-ckb');
     shell.classList.toggle('has-kb-bar', show);
+    shell.classList.toggle('has-ckb', ckbOn);
+    if (els.ckb) els.ckb.setAttribute('aria-hidden', ckbOn ? 'false' : 'true');
+    syncInputMode();
     var hasSel = !!ta && ta.selectionStart !== ta.selectionEnd;
     if (els.kbGraph.disabled === hasSel) els.kbGraph.disabled = !hasSel;
     syncDials(show);
     if (changed) pipLayout(true);
+  }
+
+  // ------------------------------------------------------------------ on-screen code keyboard
+  function loadKbMode() {
+    try {
+      var v = localStorage.getItem(KB_KEY);
+      return v === 'system' || v === '"system"' ? 'system' : 'code';
+    } catch (e) { return 'code'; }
+  }
+  /** inputmode="none" suppresses the native soft keyboard (iOS Safari >= 12.2, Android Chrome); caret placement
+   *  and selection still work. Must be in place before the textarea is focused, so it is set on enter(). */
+  function syncInputMode() {
+    var ta = textarea();
+    if (!ta) return;
+    var want = compact && kbMode === 'code' && !!els.ckb && (coarse() || forceKbBar);
+    if (want) { if (ta.getAttribute('inputmode') !== 'none') ta.setAttribute('inputmode', 'none'); }
+    else if (ta.hasAttribute('inputmode')) ta.removeAttribute('inputmode');
+  }
+  function syncKbSwitch() {
+    var b = els.kbSwitch;
+    if (!b) return;
+    var code = kbMode === 'code';
+    b.hidden = !els.ckb;                     // no code keyboard loaded -> nothing to switch to
+    b.setAttribute('aria-label', code ? 'Use system keyboard' : 'Use code keyboard');
+    b.innerHTML = svg(code ? IC.keyboard : IC.code, 22);
+  }
+  function setKbMode(m, refocus) {
+    m = m === 'system' ? 'system' : 'code';
+    kbMode = m;
+    try { localStorage.setItem(KB_KEY, m); } catch (e) { /* storage unavailable */ }
+    syncKbSwitch();
+    syncInputMode();
+    var ta = textarea();
+    if (refocus && ta && doc.activeElement === ta) {
+      // iOS only re-reads inputmode on focus: bounce focus inside the user gesture so the native keyboard
+      // appears / disappears immediately. Keep caret and scroll position.
+      var s = ta.selectionStart, e = ta.selectionEnd, d = ta.selectionDirection, top = ta.scrollTop, left = ta.scrollLeft;
+      ta.blur();
+      ta.focus();
+      try { ta.setSelectionRange(s, e, d); } catch (err) { /* ignore */ }
+      ta.scrollTop = top; ta.scrollLeft = left;
+    }
+    updateKbBar();
+    return kbMode;
+  }
+  function applyKeyOp(op) {
+    var ed = app().editor, ta = textarea();
+    if (!op || !ed || !ta) return;
+    if (doc.activeElement !== ta) ta.focus();
+    switch (op.type) {
+      case 'insert':
+        if (typeof ed.insertText === 'function') ed.insertText(String(op.text == null ? '' : op.text));
+        break;
+      case 'wrap':
+        if (typeof ed.wrapSelection === 'function') ed.wrapSelection(op.before, op.after);
+        else if (typeof ed.insertText === 'function') ed.insertText(String(op.before || '') + String(op.after || ''));
+        break;
+      case 'backspace':
+        if (typeof ed.deleteBackward === 'function') ed.deleteBackward();
+        break;
+      case 'move':
+        if (typeof ed.moveCaret === 'function') ed.moveCaret(op.delta < 0 ? -1 : 1);
+        break;
+      case 'enter':
+        // Let the editor's own Return logic run (auto-indent, and the autocomplete's compact rule that Return
+        // never accepts a completion). The editor handler preventDefaults and inserts the newline itself, so
+        // this works for an untrusted synthetic event.
+        ta.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true
+        }));
+        break;
+    }
   }
 
   // ------------------------------------------------------------------ number dials
@@ -833,6 +927,10 @@ window.ShaderSandbox = window.ShaderSandbox || {};
       var r = call('graphSelection', false);
       if (r !== false) setTab('graph');
     });
+    syncKbSwitch();
+    els.kbSwitch.addEventListener('click', function () {
+      setKbMode(kbMode === 'code' ? 'system' : 'code', true);
+    });
     els.kbDone.addEventListener('click', function () {
       var t = textarea();
       if (t) t.blur();
@@ -881,8 +979,10 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     var open = focused && restH - h > 120;
     shell.style.setProperty('--vvh', Math.round(h) + 'px');
     shell.style.setProperty('--vvt', Math.round(top) + 'px');
-    if (open !== kbOpen) { kbOpen = open; }
+    var kbChanged = open !== kbOpen;
+    kbOpen = open;
     shell.classList.toggle('kb-open', open);
+    if (kbChanged) updateKbBar();
     if (window.pageYOffset || window.pageXOffset) window.scrollTo(0, 0);
   }
 
@@ -1030,7 +1130,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
 
   // ------------------------------------------------------------------ overlays: sheets, menus, alerts
   function inertBackground(on) {
-    [els.nav, els.stage, els.dials, els.kb, els.tabbar].forEach(function (n) {
+    [els.nav, els.stage, els.dials, els.kb, els.ckb, els.tabbar].forEach(function (n) {
       if (!n) return;
       if (on) n.setAttribute('inert', ''); else n.removeAttribute('inert');
     });
@@ -1348,7 +1448,10 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     alert: function (o) { return compact ? openAlert(o) : null; },
     sheet: function (o) { return compact ? openSheet(o) : null; },
     pipState: function () { return { corner: pip.c, stash: pip.s, x: pip.x, y: pip.y, w: pip.w, h: pip.h }; },
-    forceKeyboardBar: function (on) { forceKbBar = !!on; updateKbBar(); },
+    forceKeyboardBar: function (on) { forceKbBar = !!on; syncInputMode(); updateKbBar(); },
+    keyboardMode: function () { return kbMode; },
+    setKeyboardMode: function (m) { return setKbMode(m, false); },
+    codeKeyboard: function () { return ckbApi; },
     dialsVisible: function () { return !!shell && shell.classList.contains('has-dials'); },
     _numAt: numAt,
     _formatNum: formatNum,
