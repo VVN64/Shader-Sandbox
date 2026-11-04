@@ -21,26 +21,18 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     return o;
   }
 
-  var KEYWORDS = wordSet(
-    'uniform varying attribute in out inout const if else for while do return ' +
-    'break continue discard struct precision highp mediump lowp switch case default ' +
-    'layout flat smooth centroid invariant'
-  );
-  var TYPES = wordSet(
-    'float int uint bool void vec2 vec3 vec4 ivec2 ivec3 ivec4 uvec2 uvec3 uvec4 ' +
-    'bvec2 bvec3 bvec4 mat2 mat3 mat4 mat2x2 mat2x3 mat2x4 mat3x2 mat3x3 mat3x4 ' +
-    'mat4x2 mat4x3 mat4x4 sampler2D sampler3D samplerCube sampler2DArray'
-  );
-  var BUILTINS = wordSet(
-    'radians degrees sin cos tan asin acos atan sinh cosh tanh pow exp log exp2 log2 ' +
-    'sqrt inversesqrt abs sign floor ceil trunc round fract mod min max clamp mix step ' +
-    'smoothstep length distance dot cross normalize faceforward reflect refract ' +
-    'matrixCompMult transpose inverse determinant lessThan lessThanEqual greaterThan ' +
-    'greaterThanEqual equal notEqual any all not texture2D texture2DLod textureCube ' +
-    'texture textureLod texelFetch textureSize dFdx dFdy fwidth'
-  );
-  var CONSTANTS = wordSet('true false');
-  var UNIFORM_ALIASES = wordSet('iTime iResolution iMouse iFrame iTimeDelta iDate');
+  // Vocabulary lives in js/glsl.js (must be loaded before this file). Missing
+  // arrays degrade to empty sets rather than throwing at load time.
+  var GLSL = NS.glsl || {};
+  function glslWords(name) {
+    var a = GLSL[name];
+    return wordSet(a && a.join ? a.join(' ') : '');
+  }
+  var KEYWORDS = glslWords('KEYWORDS');
+  var TYPES = glslWords('TYPES');
+  var BUILTINS = glslWords('BUILTINS');
+  var CONSTANTS = glslWords('CONSTANTS');
+  var UNIFORM_ALIASES = glslWords('UNIFORM_ALIASES');
 
   // Single-pass tokenizer. Groups:
   //  1 line comment, 2 block comment (may be unterminated -> runs to end of input),
