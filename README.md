@@ -29,7 +29,12 @@ A Book-of-Shaders–style GLSL playground. No build step and no dependencies: op
   - A tab bar with **Code / Preview / Graph**, and a navigation bar with the example picker, play/pause and a **Share** button (Record GIF…, Share Image…, Save / Open Shader File).
   - While you code, the preview floats as a picture-in-picture card. Drag it to any corner, flick it to the side to tuck it away, or tap it to go full screen.
   - Compile errors show as a red banner; tap it to jump to the line.
-  - A symbol bar above the keyboard has Tab, common GLSL symbols, and **Graph** for the selected text.
+  - **Code keyboard:** tapping the editor opens a keyboard made for GLSL instead of the phone's own, so more of your code stays visible. Tap anywhere in the code to move the cursor.
+    - **ABC**: QWERTY. Tap ⇧ for one capital letter, double-tap it for caps lock, tap again to turn it off.
+    - **ƒ(x)**: `sin`, `cos`, `pow`, `smoothstep`, `mix`, `clamp`, `fract`, `length`, `vec3`, … A function key inserts `sin()` with the cursor between the brackets, or wraps the selected text: select `st.x`, tap **sin** → `sin(st.x)`.
+    - **123 π**: digits, operators, `π` and `τ` (inserted as numbers), `0.5`/`1.0`/`2.0`, swizzles (`.x`, `.xy`, `.rgb`), `u_time` and `st`.
+    - Keys type as soon as you touch them. Hold ⌫, ← or → to repeat. Return starts a new line with the current indent.
+  - A symbol bar above the keyboard has Tab, common GLSL symbols, **Graph** for the selected text and **Done** to hide the keyboard. Its keyboard key switches to your phone's own keyboard (for dictation, emoji or other languages) and back; the choice is remembered. A hardware keyboard always works.
   - Autocomplete: the list opens under the word as you type. Tap an entry to insert it; the keyboard stays up. Return always starts a new line and closes the list. Turning a dial, tapping a symbol or switching tabs closes it.
   - **Number dials:** put the cursor on a number (e.g. `1.0`) and two dials appear above the keyboard. Turn **Fine** for small steps (0.01; 1 for whole numbers) and **Coarse** for large ones (0.1; 10 for whole numbers). The code and preview update live as you turn, and **Reset** restores the original value.
   - The graph supports drag to pan, pinch to zoom and double-tap to reset; touch and hold to read values. **Equations** and **Table** switch with a segmented control.
@@ -39,6 +44,6 @@ A Book-of-Shaders–style GLSL playground. No build step and no dependencies: op
 
 Shortcuts: `Ctrl+Enter` recompile · `Ctrl+G` graph selection · `Ctrl+P` play/pause · `Ctrl+/` toggle comment · `Ctrl+Space` autocomplete · `Tab`/`Shift+Tab` indent/outdent.
 
-Layout: `js/editor.js`, `js/glsl.js` (GLSL vocabulary and autocomplete), `js/shader-preview.js`, `js/shader-probe.js` (value capture), `js/gif-encoder.js` (GIF writer), `js/graph-widget.js` and `js/window-manager.js` are independent modules on `window.ShaderSandbox`, and `js/app.js` wires them together. See `CONTRACT.md` for each module's API. `tests/` holds Node tests for `js/glsl.js`.
+Layout: `js/editor.js`, `js/glsl.js` (GLSL vocabulary and autocomplete), `js/shader-preview.js`, `js/shader-probe.js` (value capture), `js/gif-encoder.js` (GIF writer), `js/graph-widget.js`, `js/window-manager.js` and `js/code-keyboard.js` (phone code keyboard) are independent modules on `window.ShaderSandbox`, `js/app.js` wires them together and `js/mobile.js` builds the phone interface. See `CONTRACT.md` for each module's API. `tests/` holds Node tests for `js/glsl.js` and `js/code-keyboard.js`.
 
-Tests: `node --test tests/glsl.test.js` (Node 18 or newer, nothing to install).
+Tests: `node --test tests/glsl.test.js tests/code-keyboard.test.js` (Node 18 or newer, nothing to install).

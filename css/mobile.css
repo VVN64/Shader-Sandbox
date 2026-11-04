@@ -303,6 +303,134 @@ body.has-banner .m-view-graph { top: 36px; }
 .m-key-act:active { background: none; opacity: .4; }
 .m-key-act:disabled { color: var(--ios-label-3); opacity: 1; cursor: default; }
 .m-key-done { font-weight: 600; font-size: 17px; letter-spacing: -.408px; }
+.m-key-switch { min-width: 40px; padding: 0 8px; }
+.m-key[hidden] { display: none; }
+
+/* ------------------------------------------------------------------ on-screen code keyboard
+ * Replaces the native keyboard (the textarea gets inputmode="none"), styled like the dark iOS keyboard.
+ * Markup from js/code-keyboard.js: .ckb > .ckb-tabs > .ckb-tab  +  .ckb-keys > .ckb-row > .ckb-key */
+body.is-compact .m-ckb {
+  --ckb-row: 46px;
+  --ckb-gap: 6px;
+  display: none;
+  flex: none;
+  position: relative;
+  z-index: 5;
+  padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
+  background: var(--ios-bg-2);
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+body.is-compact .m-shell.has-ckb .m-ckb { display: block; }
+body.is-compact .m-shell.has-ckb .m-tabbar { display: none; }
+body.is-compact .m-ckb .ckb { padding: 0 3px 4px; }
+
+/* tab strip: segmented control (track + raised selected segment) */
+body.is-compact .m-ckb .ckb-tabs {
+  display: flex;
+  height: 28px;
+  margin: 3px 3px 3px;
+  padding: 2px;
+  gap: 0;
+  border-radius: 9px;
+  background: var(--ios-fill);
+}
+body.is-compact .m-ckb .ckb-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 24px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ios-label);
+  font: 500 13px/24px var(--ios-font);
+  letter-spacing: -.08px;
+  white-space: nowrap;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  transition: background .2s ease, box-shadow .2s ease;
+}
+body.is-compact .m-ckb .ckb-tab.is-active {
+  background: #636366;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .12), 0 3px 1px rgba(0, 0, 0, .04);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* keys */
+body.is-compact .m-ckb .ckb-keys {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ckb-gap);
+  padding-top: 4px;
+}
+body.is-compact .m-ckb .ckb-row {
+  display: flex;
+  gap: var(--ckb-gap);
+  height: var(--ckb-row);
+}
+body.is-compact .m-ckb .ckb-key {
+  flex: 1 1 0;               /* flex-grow comes inline from the weight */
+  min-width: 0;
+  height: 100%;
+  padding: 0 2px;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #505053;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, .55);
+  color: var(--ios-label);
+  font: 400 22px/1 var(--ios-font);
+  letter-spacing: 0;
+  white-space: nowrap;
+  text-overflow: clip;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: pointer;
+}
+body.is-compact .m-ckb .ckb-key-fn,
+body.is-compact .m-ckb .ckb-key-word {
+  font: 400 15px/1 var(--mono);
+  letter-spacing: -.2px;
+}
+body.is-compact .m-ckb .ckb-key-special {
+  background: #2f2f32;
+  font-size: 19px;
+}
+body.is-compact .m-ckb .ckb-key-space {
+  font: 400 16px/1 var(--ios-font);
+  letter-spacing: -.32px;
+  color: var(--ios-label-2);
+}
+body.is-compact .m-ckb .ckb-key.is-pressed,
+body.is-compact .m-ckb .ckb-key:active { background: #7c7c80; }
+body.is-compact .m-ckb .ckb-key-special.is-pressed,
+body.is-compact .m-ckb .ckb-key-special:active { background: #505053; }
+body.is-compact .m-ckb .ckb-key.is-shift-once,
+body.is-compact .m-ckb .ckb-key.is-shift-lock { background: #e5e5ea; color: #000; }
+body.is-compact .m-ckb .ckb-key.is-shift-lock { position: relative; }
+body.is-compact .m-ckb .ckb-key.is-shift-lock::after {
+  content: "";
+  position: absolute; left: 50%; bottom: 7px;
+  width: 14px; height: 2px; margin-left: -7px;
+  border-radius: 1px;
+  background: currentColor;
+}
+
+@media (max-height: 500px) {
+  body.is-compact .m-ckb { --ckb-row: 34px; --ckb-gap: 5px; }
+  body.is-compact .m-ckb .ckb-tabs { height: 26px; margin: 2px 3px; }
+  body.is-compact .m-ckb .ckb-tab { height: 22px; line-height: 22px; }
+  body.is-compact .m-ckb .ckb-key { font-size: 19px; }
+  body.is-compact .m-ckb .ckb-key-fn,
+  body.is-compact .m-ckb .ckb-key-word { font-size: 14px; }
+  /* every px counts for the editor here: slimmer accessory bar while the code keyboard is up */
+  body.is-compact .m-shell.has-ckb .m-kbbar { height: 36px; }
+  body.is-compact .m-shell.has-ckb .m-kbbar .m-key { height: 30px; }
+}
 
 /* ------------------------------------------------------------------ number dial tray
  * Two knurled dials (Fine left, Coarse right) and the live value, stacked directly above the accessory bar. */

@@ -5,7 +5,7 @@ var SHELL = [
   './', './index.html', './manifest.webmanifest',
   'css/base.css', 'css/editor.css', 'css/graph.css', 'css/mobile.css',
   'js/window-manager.js', 'js/glsl.js', 'js/editor.js', 'js/shader-preview.js', 'js/shader-probe.js',
-  'js/graph-widget.js', 'js/gif-encoder.js', 'js/examples.js', 'js/app.js', 'js/mobile.js',
+  'js/graph-widget.js', 'js/gif-encoder.js', 'js/examples.js', 'js/app.js', 'js/code-keyboard.js', 'js/mobile.js',
   'icons/app-icon-192.png', 'icons/app-icon-512.png', 'icons/apple-touch-icon-180.png'
 ];
 
