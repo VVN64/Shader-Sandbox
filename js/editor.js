@@ -516,7 +516,49 @@ window.ShaderSandbox = window.ShaderSandbox || {};
         return { text: v.slice(s, e), start: s, end: e, line: line,
                  column: s - before.lastIndexOf('\n') };
       },
-      getTextarea: function () { return ta; }
+      getTextarea: function () { return ta; },
+      /** Insert text at the caret / over the selection (undo-friendly). */
+      insertText: function (text) {
+        text = String(text == null ? '' : text);
+        var st = ta.selectionStart, en = ta.selectionEnd;
+        replaceRange(st, en, text, st + text.length);
+      },
+      /**
+       * Fast, non-undoable replacement for high-frequency edits (e.g. scrubbing a number with a dial).
+       * Keeps focus/keyboard as-is, sets the selection, re-renders and fires onChange once.
+       */
+      replaceRangeLive: function (start, end, text, selStart, selEnd) {
+        var keepTop = ta.scrollTop, keepLeft = ta.scrollLeft;
+        ta.setRangeText(String(text), start, end, 'preserve');
+        if (selStart != null) ta.setSelectionRange(selStart, selEnd != null ? selEnd : selStart);
+        ta.scrollTop = keepTop; ta.scrollLeft = keepLeft;
+        render();
+        updateActiveLine();
+        syncScroll();
+        onChange(ta.value);
+      },
+      /** dir > 0: indent (soft tab when nothing is selected); dir < 0: outdent. */
+      indentSelection: function (dir) {
+        if (dir < 0) outdentSelection();
+        else if (ta.selectionStart === ta.selectionEnd) insertSoftTab();
+        else indentSelection();
+      },
+      /** Select line n (1-based) and scroll it into view, without forcing the keyboard open. */
+      revealLine: function (n) {
+        var v = ta.value, lines = v.split('\n');
+        n = Math.max(1, Math.min(lines.length, Math.floor(n) || 1));
+        var start = 0;
+        for (var i = 0; i < n - 1; i++) start += lines[i].length + 1;
+        ta.setSelectionRange(start, start + lines[n - 1].length);
+        var target = padTop + (n - 1) * lineHeight - ta.clientHeight / 3;
+        ta.scrollTop = Math.max(0, target);
+        ta.scrollLeft = 0;
+        syncScroll();
+        updateActiveLine(true);
+        activeBand.classList.remove('sse-flash');
+        void activeBand.offsetWidth;            // restart the flash animation
+        activeBand.classList.add('sse-flash');
+      }
     };
   };
 })(window.ShaderSandbox);

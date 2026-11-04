@@ -49,8 +49,15 @@
       var first = res.errors && res.errors[0];
       statusMsg.textContent = first ? 'line ' + first.line + ': ' + first.message : '';
     }
+    lastStatus = { ok: !!res.ok, errors: res.errors || [] };
+    statusListeners.forEach(function (cb) { try { cb(lastStatus); } catch (e) {} });
+    syncExampleSelect();
     rebuildProbes(res.ok);
   }
+  var lastStatus = { ok: true, errors: [] };
+  var statusListeners = [], playListeners = [];
+  function isCompact() { return document.body.classList.contains('is-compact'); }
+  var coarse = window.matchMedia ? window.matchMedia('(pointer: coarse)') : { matches: false };
 
   // ---------- floating windows ----------
   var winPreview = NS.makeFloatingWindow($('win-preview'), {
@@ -79,13 +86,16 @@
   function syncPlay() {
     playBtn.textContent = preview.isPlaying() ? '❚❚ Pause' : '▶ Play';
     updateMeta();
+    var p = preview.isPlaying();
+    playListeners.forEach(function (cb) { try { cb(p); } catch (e) {} });
   }
   function togglePlay() {
     if (preview.isPlaying()) preview.pause(); else preview.play();
     syncPlay();
   }
   playBtn.onclick = togglePlay;
-  $('btn-reset').onclick = function () { preview.resetTime(); };
+  function resetTime() { preview.resetTime(); }
+  $('btn-reset').onclick = resetTime;
 
   var sel = $('example-select');
   var custom = document.createElement('option');
@@ -96,28 +106,74 @@
     o.value = String(i); o.textContent = ex.name;
     sel.appendChild(o);
   });
+  function currentExample() {
+    var cur = editor.getValue();
+    for (var i = 0; i < NS.examples.length; i++) if (NS.examples[i].code === cur) return i;
+    return -1;
+  }
+  function syncExampleSelect() {
+    var i = currentExample();
+    sel.value = i < 0 ? '' : String(i);
+  }
+  /** Load example i. Returns false (doing nothing) if it would overwrite edited code and !force. */
+  function loadExample(i, force) {
+    if (!NS.examples[i]) return false;
+    if (!force && currentExample() < 0 && editor.getValue().trim()) return false;
+    editor.setValue(NS.examples[i].code);
+    save(CODE_KEY, editor.getValue());
+    compile();
+    return true;
+  }
   sel.value = load(CODE_KEY) ? '' : '0';
   sel.onchange = function () {
     if (sel.value === '') return;
-    var cur = editor.getValue();
-    var isExample = NS.examples.some(function (ex) { return ex.code === cur; });
-    if (!isExample && !confirm('Replace your current code with this example?')) {
-      sel.value = ''; return;
+    var i = +sel.value;
+    if (!loadExample(i, false)) {
+      if (!confirm('Replace your current code with this example?')) { syncExampleSelect(); return; }
+      loadExample(i, true);
     }
-    editor.setValue(NS.examples[+sel.value].code);
-    save(CODE_KEY, editor.getValue());
-    compile();
     editor.focus();
   };
 
-  $('btn-download').onclick = function () {
-    var blob = new Blob([editor.getValue()], { type: 'text/plain' });
+  function saveBlob(blob, name) {
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'shader.frag';
-    a.click();
-    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-  };
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+  }
+  /** Web Share sheet with a file when supported (iOS: Save Image / Save to Files / AirDrop...), else download. */
+  function shareOrSave(blob, name, title) {
+    try {
+      var file = new File([blob], name, { type: blob.type });
+      if (navigator.canShare && navigator.share && navigator.canShare({ files: [file] })) {
+        return navigator.share({ files: [file], title: title }).catch(function (err) {
+          if (!err || err.name !== 'AbortError') saveBlob(blob, name);
+        });
+      }
+    } catch (e) { /* fall through */ }
+    saveBlob(blob, name);
+    return Promise.resolve();
+  }
+  function canShareFiles() {
+    try {
+      return !!(navigator.canShare && navigator.share &&
+        navigator.canShare({ files: [new File([''], 'x.png', { type: 'image/png' })] }));
+    } catch (e) { return false; }
+  }
+  function downloadFrag() {
+    saveBlob(new Blob([editor.getValue()], { type: 'text/plain' }), 'shader.frag');
+  }
+  function openFile() { $('file-input').click(); }
+  function sharePNG() {
+    return new Promise(function (resolve) {
+      canvas.toBlob(function (blob) {
+        if (!blob) { toast('Could not capture the preview.', true); resolve(); return; }
+        shareOrSave(blob, 'shader.png', 'Shader').then(resolve, resolve);
+      }, 'image/png');
+    });
+  }
+  $('btn-download').onclick = downloadFrag;
   $('file-input').onchange = function (e) {
     var f = e.target.files[0];
     if (!f) return;
@@ -271,7 +327,7 @@
   // Live updates: the probe re-samples with the preview's time/mouse while playing (~30 Hz).
   var lastProbeTick = 0;
   (function probeLoop(ts) {
-    if (probes.length && preview.isPlaying() && !winGraph.isHidden() && ts - lastProbeTick > 33) {
+    if (probes.length && preview.isPlaying() && (!winGraph.isHidden() || isCompact()) && ts - lastProbeTick > 33) {
       lastProbeTick = ts;
       graph.invalidate();
     }
@@ -298,7 +354,7 @@
     return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
   }
   editor.getTextarea().addEventListener('contextmenu', function (e) {
-    if (e.shiftKey) return;                        // Shift+right-click → native menu
+    if (e.shiftKey || isCompact() || coarse.matches) return; // Shift+right-click / touch → native menu
     var s = editor.getSelection(false);
     var expr = cleanExpr(s.text);
     if (!expr || /\n/.test(expr)) return;          // nothing selected → native menu (paste etc.)
@@ -378,18 +434,18 @@
     try { localStorage.setItem('shadersandbox.gif', JSON.stringify({ size: gif.size, fps: gif.fps, fromZero: gif.fromZero, dither: gif.dither, colors: gif.colors })); } catch (e) {}
   }
 
-  function openGifPanel() {
-    if (gif.panel) { closeGifPanel(); return; }
+  function buildGifPanel(embedded) {
     var p = document.createElement('div');
-    p.className = 'gif-panel';
+    p.className = 'gif-panel' + (embedded ? ' is-embedded' : '');
     p.innerHTML =
-      '<h3>Record GIF <span class="status-dim">' + GIF_SECONDS + ' s</span>' +
-      '<button class="fwin-btn gif-x" title="Close">×</button></h3>' +
+      (embedded ? '' : '<h3>Record GIF <span class="status-dim">' + GIF_SECONDS + ' s</span>' +
+      '<button class="fwin-btn gif-x" title="Close">×</button></h3>') +
       '<div class="gif-opts"></div><div class="gif-info"></div>' +
       '<div class="gif-progress"><div></div></div><div class="gif-status">Ready.</div>' +
       '<div class="gif-result"><img alt="Recorded GIF preview"></div>' +
       '<div class="gif-actions">' +
-      '<button class="tb-btn gif-dl" style="display:none">⤓ Download</button>' +
+      '<button class="tb-btn gif-dl" style="display:none">' +
+      (embedded && canShareFiles() ? 'Share…' : (embedded ? 'Save GIF' : '⤓ Download')) + '</button>' +
       '<button class="tb-btn gif-primary gif-go">● Record</button></div>';
     var opts = p.querySelector('.gif-opts');
     opts.appendChild(gifRow('Width', segment([320, 480, 640], gif.size, function (v) { return v + 'px'; },
@@ -404,9 +460,30 @@
     cr.title = 'Fewer colours = smaller file; more colours = smoother gradients';
     opts.appendChild(cr);
     opts.appendChild(dr);
-    p.querySelector('.gif-x').onclick = closeGifPanel;
+    if (!embedded) p.querySelector('.gif-x').onclick = closeGifPanel;
     p.querySelector('.gif-go').onclick = function () { if (gif.running) gif.cancel = true; else recordGif(); };
-    p.querySelector('.gif-dl').onclick = downloadGif;
+    p.querySelector('.gif-dl').onclick = function () {
+      if (gif.embedded && gif.blob) shareOrSave(gif.blob, 'shader.gif', 'Shader GIF'); else downloadGif();
+    };
+    return p;
+  }
+  /** Embedded GIF recorder (e.g. inside a mobile sheet). */
+  function mountGifPanel(container) {
+    if (gif.panel) closeGifPanel();
+    var p = buildGifPanel(true);
+    container.appendChild(p);
+    gif.panel = p; gif.embedded = true;
+    refreshGifInfo();
+    return {
+      unmount: function () {
+        if (gif.panel === p) { if (gif.running) gif.cancel = true; p.remove(); gif.panel = null; gif.embedded = false; }
+      }
+    };
+  }
+  function openGifPanel() {
+    if (gif.panel) { closeGifPanel(); return; }
+    var p = buildGifPanel(false);
+    gif.embedded = false;
     document.body.appendChild(p);
     var r = $('btn-gif').getBoundingClientRect();
     p.style.top = (r.bottom + 6) + 'px';
@@ -418,6 +495,7 @@
   function closeGifPanel() {
     if (gif.running) gif.cancel = true;
     if (gif.panel) { gif.panel.remove(); gif.panel = null; }
+    gif.embedded = false;
     $('btn-gif').classList.remove('is-on');
   }
   function gifStatus(msg, frac, isErr) {
@@ -485,25 +563,29 @@
         var bytes = enc.finish();
         preview.releaseCapture();
         if (gif.url) URL.revokeObjectURL(gif.url);
-        gif.url = URL.createObjectURL(new Blob([bytes], { type: 'image/gif' }));
+        gif.blob = new Blob([bytes], { type: 'image/gif' });
+        gif.url = URL.createObjectURL(gif.blob);
         var secs = ((performance.now() - started) / 1000).toFixed(1);
         finish();
         if (!gif.panel) return;
         panel.querySelector('.gif-result img').src = gif.url;
         panel.classList.add('has-result');
         panel.querySelector('.gif-dl').style.display = '';
-        gifStatus('Done: ' + d.w + '×' + d.h + ', ' + fmtBytes(bytes.length) + ' in ' + secs + ' s — saved shader.gif' +
+        gifStatus('Done: ' + d.w + '×' + d.h + ', ' + fmtBytes(bytes.length) + ' in ' + secs + ' s' +
+          (gif.embedded ? '' : ' — saved shader.gif') +
           (bytes.length > 8 * 1048576 ? '. Large file: try a smaller width, fewer colours or 10 fps.' : ''), 1);
-        downloadGif();
+        if (!gif.embedded) downloadGif();
       } catch (err) {
         finish('GIF failed: ' + (err && err.message || err), true);
       }
     })();
   }
   $('btn-gif').onclick = openGifPanel;
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && gif.panel && !gif.running) closeGifPanel(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && gif.panel && !gif.running && !gif.embedded) closeGifPanel();
+  });
   document.addEventListener('pointerdown', function (e) {
-    if (gif.panel && !gif.running && !gif.panel.contains(e.target) && !$('btn-gif').contains(e.target)) closeGifPanel();
+    if (gif.panel && !gif.embedded && !gif.running && !gif.panel.contains(e.target) && !$('btn-gif').contains(e.target)) closeGifPanel();
   }, true);
 
   // ---------- keyboard ----------
@@ -519,7 +601,7 @@
 
   compile();
   syncPlay();
-  editor.focus();
+  if (!coarse.matches) editor.focus();
 
   // restore previously graphed values
   try {
@@ -529,6 +611,13 @@
   } catch (e) {}
 
   NS.app = { editor: editor, preview: preview, graph: graph, compile: compile,
+             togglePlay: togglePlay, isPlaying: function () { return preview.isPlaying(); }, resetTime: resetTime,
+             onStatus: function (cb) { statusListeners.push(cb); try { cb(lastStatus); } catch (e) {} },
+             onPlayState: function (cb) { playListeners.push(cb); try { cb(preview.isPlaying()); } catch (e) {} },
+             exampleNames: function () { return NS.examples.map(function (ex) { return ex.name; }); },
+             currentExample: currentExample, loadExample: loadExample,
+             downloadFrag: downloadFrag, openFile: openFile, sharePNG: sharePNG,
+             mountGifPanel: mountGifPanel, graphSelection: graphSelection, toast: toast,
              openGifPanel: openGifPanel, recordGif: recordGif, gifState: function () { return gif; },
              addProbe: addProbe, removeProbe: removeProbe, probes: function () { return probes; },
              windows: { preview: winPreview, graph: winGraph } };
