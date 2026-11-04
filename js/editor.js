@@ -855,6 +855,70 @@ window.ShaderSandbox = window.ShaderSandbox || {};
         activeBand.classList.remove('sse-flash');
         void activeBand.offsetWidth;            // restart the flash animation
         activeBand.classList.add('sse-flash');
+      },
+      /**
+       * Wrap the selection in before/after (undo-friendly), e.g. ('sin(', ')').
+       * Empty selection -> caret between them (`sin(|)`); a partly typed prefix of the name before the caret
+       * is replaced (`sm|` + smoothstep -> `smoothstep(|)`). Non-empty -> caret after `after` (`sin(x)|`).
+       */
+      wrapSelection: function (before, after) {
+        before = String(before == null ? '' : before);
+        after = String(after == null ? '' : after);
+        var v = ta.value, s = ta.selectionStart, e = ta.selectionEnd;
+        var mid = v.slice(s, e), empty = s === e;
+        if (empty) {
+          // A partly typed name is completed rather than duplicated: `sm` + smoothstep( -> smoothstep().
+          var typed = /[A-Za-z_]\w*$/.exec(v.slice(lineStartOf(v, s), s));
+          if (typed && before.length > typed[0].length && before.indexOf(typed[0]) === 0) s -= typed[0].length;
+        }
+        var text = before + mid + after;
+        if (!text) return;
+        var caret = empty ? s + before.length : s + text.length;
+        replaceRange(s, e, text, caret);
+      },
+      /**
+       * Backspace (undo-friendly; fires input with inputType deleteContentBackward).
+       * Deletes the selection, else the char before the caret; 4 spaces ending at a tab stop are
+       * deleted as one soft tab. No-op at position 0.
+       */
+      deleteBackward: function () {
+        var v = ta.value, s = ta.selectionStart, e = ta.selectionEnd;
+        if (s !== e) { replaceRange(s, e, '', s); return; }
+        if (s <= 0) return;
+        var col = s - lineStartOf(v, s);
+        var n = 1;
+        if (col >= INDENT_SIZE && col % INDENT_SIZE === 0 && v.slice(s - INDENT_SIZE, s) === INDENT) n = INDENT_SIZE;
+        else if (s >= 2 && /[\uDC00-\uDFFF]/.test(v.charAt(s - 1)) && /[\uD800-\uDBFF]/.test(v.charAt(s - 2))) n = 2;
+        replaceRange(s - n, s, '', s - n);
+      },
+      /** Move the caret by delta chars; a selection collapses to its start (delta < 0) or end (delta > 0). */
+      moveCaret: function (delta) {
+        delta = Math.round(Number(delta) || 0);
+        var v = ta.value, s = ta.selectionStart, e = ta.selectionEnd, p;
+        if (s !== e) p = delta < 0 ? s : e;
+        else {
+          p = Math.max(0, Math.min(v.length, s + delta));
+          // never land between the halves of a surrogate pair
+          if (p > 0 && p < v.length && /[\uDC00-\uDFFF]/.test(v.charAt(p)) && /[\uD800-\uDBFF]/.test(v.charAt(p - 1))) {
+            p += delta < 0 ? -1 : 1;
+          }
+        }
+        if (document.activeElement !== ta) ta.focus();
+        ta.setSelectionRange(p, p);
+        // setSelectionRange does not scroll a textarea; keep the caret in view (one line / a few columns of margin)
+        var top = padTop + lineIndexAt(v, p) * lineHeight, vis = ta.clientHeight;
+        if (vis) {
+          if (top - lineHeight < ta.scrollTop) ta.scrollTop = Math.max(0, top - lineHeight);
+          else if (top + 2 * lineHeight > ta.scrollTop + vis) ta.scrollTop = top + 2 * lineHeight - vis;
+        }
+        var x = padLeft + visualCol(v.slice(lineStartOf(v, p), p)) * charWidth, visW = ta.clientWidth;
+        if (visW) {
+          if (x - 4 * charWidth < ta.scrollLeft) ta.scrollLeft = Math.max(0, x - 4 * charWidth);
+          else if (x + 4 * charWidth > ta.scrollLeft + visW) ta.scrollLeft = x + 4 * charWidth - visW;
+        }
+        syncScroll();
+        updateActiveLine();
+        acCaretCheck();
       }
     };
   };
