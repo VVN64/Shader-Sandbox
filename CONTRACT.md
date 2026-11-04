@@ -22,6 +22,7 @@ No external libraries / CDNs. Must work in current Firefox and Chrome.
 | `js/glsl.js` (+ `tests/glsl.test.js`) | editor agent | `NS.glsl` — GLSL vocabulary + autocomplete logic (pure, no DOM) |
 | `js/shader-preview.js` | preview agent | `NS.createShaderPreview` |
 | `js/graph-widget.js` + `css/graph.css` | graph agent | `NS.createGraphWidget` |
+| `js/code-keyboard.js` (+ `tests/code-keyboard.test.js`) | shell | `NS.codeKeyboard` — phone code keyboard: layouts + key logic (pure) and `createCodeKeyboard` (DOM) |
 
 ## Theme (defined on `:root` in `css/base.css` — use these, don't redefine)
 
@@ -85,7 +86,8 @@ closes; `Escape` closes (and must not reach the document-level Escape handlers);
 Compact mode (`body.is-compact`): the popup is `position: absolute` inside `.sse-editor` (never `fixed` — the
 `.m-shell` transform would offset it), stacked above the PiP card, rows ≥ 44px. Tapping an item accepts without
 blurring the textarea (keyboard stays up). `Enter`/Return never accepts — it closes the popup and inserts a newline.
-The popup closes on `replaceRangeLive` (dials), `insertText` (accessory bar) and textarea blur (tab switch).
+The popup closes on `replaceRangeLive` (dials), non-word `insertText` (accessory-bar symbols; one word character
+from the code keyboard updates it like typing) and textarea blur (tab switch).
 
 ## `NS.createShaderPreview(canvas, options)` — `js/shader-preview.js`
 
@@ -184,8 +186,11 @@ Design tokens: the `--ios-*` and `--safe-*` variables on `:root` in `css/base.cs
   snaps to the nearest corner with momentum, can be flicked to the side edge to stash; tap → Preview tab.
 - **Preview tab**: `#preview-canvas` full-bleed; floating control capsule (play/pause, restart time, time/fps readout).
 - **Graph tab**: hosts `#graph-body` (the graph widget root) and calls `graph.setCompact(true)`.
-- **Keyboard accessory bar** above the iOS keyboard while the editor is focused (visualViewport-positioned):
-  Tab, common GLSL symbols, and a **Graph** button enabled when the editor has a selection (`NS.app.graphSelection()`).
+- **Keyboard accessory bar** above the keyboard (code or system) while the editor is focused (visualViewport-positioned):
+  Tab, common GLSL symbols, a **Graph** button enabled when the editor has a selection (`NS.app.graphSelection()`),
+  a **keyboard-switch** key (`.m-key-switch`; code ⇄ system keyboard, see below) and **Done** (blurs the textarea).
+- **Code keyboard** (`NS.codeKeyboard`, below) docked at the bottom instead of the native soft keyboard, when the
+  editor is focused on the Code tab, the pointer is coarse and the keyboard mode is `'code'`.
 - **Sheets**: bottom sheets with grabber, swipe-down to dismiss, backdrop; used for GIF recorder (`NS.app.mountGifPanel`),
   examples list, action sheets, alerts (replace native `confirm`).
 - Desktop chrome (`.topbar`, `.statusbar`, `.fwin` windows, `.gif-panel` popover, `.ctx-menu`) is hidden in compact mode.
@@ -207,6 +212,80 @@ graphSelection(expandWord) // graph the editor selection (or word at caret); ret
 toast(msg, isErr)
 editor, preview, graph, windows   // existing objects
 ```
-Editor additions: `editor.insertText(str)` (undo-friendly), `editor.revealLine(n)`, `editor.indentSelection(dir)`.
+Editor additions: `editor.insertText(str)` (undo-friendly), `editor.revealLine(n)`, `editor.indentSelection(dir)`,
+`editor.wrapSelection(before, after)`, `editor.deleteBackward()`, `editor.moveCaret(delta)` (see Code keyboard below).
 Autocomplete popup (editor-owned, see `NS.glsl`): absolute inside the editor, above the PiP card, 44px rows, tap-only accept (Return = newline); closed by dial edits, accessory-bar inserts and tab switches — no shell API needed.
 Graph addition: `graph.setCompact(bool)`.
+
+## Code keyboard (compact mode)
+
+- **`inputmode="none"`** is set on the editor textarea while compact mode is on, the pointer is coarse and the
+  keyboard mode is `'code'`; it is removed in `'system'` mode and on leaving compact mode (desktop never has the
+  attribute). It suppresses the native soft keyboard only — tapping still places the caret, selection handles and
+  the iOS edit callout (Cut/Copy/Paste) still work, and hardware keyboards still type.
+- **`.m-shell.has-ckb`** is set while the code keyboard is up (editor focused, Code tab, mode `'code'`, coarse
+  pointer — same condition as `has-kb-bar` plus the mode). The keyboard host sits after `.m-kbbar` in the shell's
+  column, so the dial tray and the accessory bar stay directly above it; like `kb-open`, `has-ckb` hides the tab bar,
+  and the editor shrinks to the space above. Height: about 244px in portrait including `--safe-bottom` (34px rows and a 36px accessory
+  bar in landscape). `vvUpdate` is unchanged (the visual viewport doesn't shrink for the code keyboard).
+- **Ops → editor**: `insert` → `editor.insertText(text)` (a single word character fires `insertText` input, so the
+  autocomplete popup opens/updates exactly as with native typing; other text closes it), `wrap` →
+  `editor.wrapSelection(before, after)`, `backspace` → `editor.deleteBackward()`, `move` → `editor.moveCaret(delta)`,
+  `enter` → a synthetic `keydown` `{ key: 'Enter' }` dispatched on the textarea, so the editor's normal Enter runs
+  (auto-indent, `{|}` split; with the popup open it closes the popup and inserts a newline — Return never accepts on
+  phones; tap a suggestion to accept).
+- **Keyboard-switch key** in the accessory bar toggles the mode; in `'system'` mode the native keyboard appears
+  (the shell re-focuses the textarea inside the tap so iOS shows it) and the code keyboard is hidden; switching back
+  hides the native keyboard. The mode is stored in `localStorage` `'shadersandbox.m.kb'` (`'code'` | `'system'`,
+  default `'code'`). Done blurs the textarea: both keyboards and the accessory bar hide. Switching tabs blurs as before.
+- **Editor additions** (all undo-friendly via `replaceRange`, fire `onChange`; no-ops when nothing changes):
+  ```js
+  wrapSelection(before, after): void // selection -> before + sel + after, caret after `after`;
+                                     // empty selection -> before + after, caret between them; a partly typed
+                                     // prefix of `before` right before the caret is replaced (`sm` -> `smoothstep()`)
+  deleteBackward(): void             // deletes the selection; else at a soft-tab stop (column % 4 == 0) with 4 spaces
+                                     // before the caret deletes all 4; else one character (nothing at 0)
+  moveCaret(delta): void             // collapses a selection to its start (delta < 0) / end (delta > 0), otherwise
+                                     // moves the caret by delta characters, clamped to [0, length]; keeps it in view
+  ```
+- **`NS.mobile` additions**: `keyboardMode(): 'code' | 'system'`; `setKeyboardMode(mode)` — stores it, applies it
+  at once if the editor is focused (updates `inputmode`, `has-ckb`), returns the mode now in effect; unknown values
+  are ignored.
+- `index.html` loads `js/code-keyboard.js` before `js/mobile.js`; `sw.js` precaches it.
+
+## `NS.codeKeyboard` — `js/code-keyboard.js`
+
+Layouts and key logic for the phone code keyboard, plus one DOM factory. Everything except `createCodeKeyboard`
+**must not touch the DOM** (or `document`/`localStorage`/timers): `tests/code-keyboard.test.js` loads it in Node via
+`vm` with only `window.ShaderSandbox` defined. Run `node --test tests/code-keyboard.test.js`. `createCodeKeyboard`
+builds and listens only inside `container`; it never touches the textarea or the editor — it reports ops through
+`onOp` and `js/mobile.js` applies them. Must load **before** `js/mobile.js` in `index.html`.
+
+```js
+NS.codeKeyboard = {
+  TABS: Array<{ id, label }>,  // [{ id:'abc', label:'ABC' }, { id:'fn', label:'ƒ(x)' }, { id:'maths', label:'123 π' }]
+  LAYOUTS: { [tabId]: Key[][] }, // 4 rows per tab; frozen data (change the function list here)
+    // Key = { id (unique per layout), label, aria?, w? (flex weight, default 1),
+    //         and exactly one of: text | wrap: [before, after] | action: 'shift'|'backspace'|'enter'|'left'|'right' }
+    // abc:   q…p / a…l / ⇧ z…m ⌫ / ← _ space . → ⏎
+    // fn:    sin cos tan atan pow sqrt / smoothstep mix step clamp fract / abs mod floor min max length ⌫ /
+    //        ← vec2 vec3 vec4 space → ⏎          (every name key is wrap: ['name(', ')'])
+    // maths: 1…0 / + - * / = < > ( ) , / π τ 0.5 1.0 2.0 .x .y .xy .rgb ⌫ / ← u_time st space → ⏎
+    //        (π inserts 3.14159265, τ inserts 6.28318531)
+  initialState(): State,       // { tab: 'abc', shift: 'off', lastShiftAt: -Infinity }; shift: 'off'|'once'|'lock'
+  setTab(state, id): State,    // new state; unknown id -> state unchanged; shift resets to 'off'
+  resolveKey(key, state, now): { state: State, op: Op | null },
+    // pure, never mutates state; now = ms timestamp (shift double-tap).
+    // shift: off -> once; once within 350 ms of the first tap -> lock; once later -> off; lock -> off (op null)
+    // letter key (single a-z text): inserted upper-cased unless shift is 'off'; 'once' returns to 'off' after it;
+    // other text keys never change case and don't consume 'once'
+    // Op = { type:'insert', text } | { type:'wrap', before:'sin(', after:')' } | { type:'backspace' }
+    //    | { type:'move', delta: -1|1 } | { type:'enter' }
+  createCodeKeyboard(container, { onOp: (op) => void }):
+    { el, setTab(id): void, getState(): State, destroy(): void }
+    // tab strip + 4 rows of <button type=button tabindex=-1> (special keys get aria-label); keys fire on pointerdown
+    // (preventDefault, so the textarea keeps focus); repeat keys (⌫ ← →) fire again after 400 ms, then every
+    // 60 ms, until pointerup/pointercancel; a click with no pointerdown before it (VoiceOver, Switch Control)
+    // fires the key once; destroy() removes el and all listeners/timers.
+}
+```
