@@ -3,6 +3,7 @@
 A Book-of-Shaders–style GLSL playground. No build step and no dependencies: open `index.html` in Firefox or Chrome.
 
 - **Editor** (main area): GLSL syntax highlighting. The shader recompiles automatically as you type. Errors appear inline on their line, and the last working shader keeps running in the preview until the error is fixed.
+  - Autocomplete: type two letters of a name and a list of matches appears — names declared in your code, the uniforms (`u_time`, `iTime`, …), `gl_FragCoord`/`gl_FragColor`, built-in functions with their signatures, types and keywords. `Ctrl+Space` opens it at any time. ↑/↓ choose, `Tab` or `Enter` insert, `Esc` closes, or click an entry. If you've already typed the whole name, `Enter` starts a new line as usual. No suggestions inside comments or numbers, or for the word right after a `#` or `.` (`#define SMOO` still suggests for `SMOO`).
 - **Preview** (floating window): a live WebGL render. Drag it by its title bar, resize it from the bottom-right corner, double-click the title bar to collapse it, and click × to hide it (bring it back with the toolbar's Preview button).
   - Uniforms: `u_time`, `u_resolution`, `u_mouse`.
   - Shadertoy-style aliases also work: `iTime`, `iResolution`, `iMouse`, `iFrame`.
@@ -29,12 +30,15 @@ A Book-of-Shaders–style GLSL playground. No build step and no dependencies: op
   - While you code, the preview floats as a picture-in-picture card. Drag it to any corner, flick it to the side to tuck it away, or tap it to go full screen.
   - Compile errors show as a red banner; tap it to jump to the line.
   - A symbol bar above the keyboard has Tab, common GLSL symbols, and **Graph** for the selected text.
+  - Autocomplete: the list opens under the word as you type. Tap an entry to insert it; the keyboard stays up. Return always starts a new line and closes the list. Turning a dial, tapping a symbol or switching tabs closes it.
   - **Number dials:** put the cursor on a number (e.g. `1.0`) and two dials appear above the keyboard. Turn **Fine** for small steps (0.01; 1 for whole numbers) and **Coarse** for large ones (0.1; 10 for whole numbers). The code and preview update live as you turn, and **Reset** restores the original value.
   - The graph supports drag to pan, pinch to zoom and double-tap to reset; touch and hold to read values. **Equations** and **Table** switch with a segmented control.
   - Images and GIFs go through the iOS Share sheet (Save Image, Files, AirDrop…).
   - Add it to the Home Screen (Share → Add to Home Screen) to run it full-screen like an app. Offline caching works when the app is served over http(s).
 - Window positions, your code and graphed values are saved in `localStorage`.
 
-Shortcuts: `Ctrl+Enter` recompile · `Ctrl+G` graph selection · `Ctrl+P` play/pause · `Ctrl+/` toggle comment · `Tab`/`Shift+Tab` indent/outdent.
+Shortcuts: `Ctrl+Enter` recompile · `Ctrl+G` graph selection · `Ctrl+P` play/pause · `Ctrl+/` toggle comment · `Ctrl+Space` autocomplete · `Tab`/`Shift+Tab` indent/outdent.
 
-Layout: `js/editor.js`, `js/shader-preview.js`, `js/shader-probe.js` (value capture), `js/gif-encoder.js` (GIF writer), `js/graph-widget.js` and `js/window-manager.js` are independent modules on `window.ShaderSandbox`, and `js/app.js` wires them together. See `CONTRACT.md` for each module's API.
+Layout: `js/editor.js`, `js/glsl.js` (GLSL vocabulary and autocomplete), `js/shader-preview.js`, `js/shader-probe.js` (value capture), `js/gif-encoder.js` (GIF writer), `js/graph-widget.js` and `js/window-manager.js` are independent modules on `window.ShaderSandbox`, and `js/app.js` wires them together. See `CONTRACT.md` for each module's API. `tests/` holds Node tests for `js/glsl.js`.
+
+Tests: `node --test tests/glsl.test.js` (Node 18 or newer, nothing to install).

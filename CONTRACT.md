@@ -19,6 +19,7 @@ No external libraries / CDNs. Must work in current Firefox and Chrome.
 | `js/window-manager.js` | shell | `NS.makeFloatingWindow(el, opts)` |
 | `js/app.js` | shell | wiring |
 | `js/editor.js` + `css/editor.css` | editor agent | `NS.createEditor` |
+| `js/glsl.js` (+ `tests/glsl.test.js`) | editor agent | `NS.glsl` — GLSL vocabulary + autocomplete logic (pure, no DOM) |
 | `js/shader-preview.js` | preview agent | `NS.createShaderPreview` |
 | `js/graph-widget.js` + `css/graph.css` | graph agent | `NS.createGraphWidget` |
 
@@ -54,6 +55,37 @@ Returns:
   refresh(): void                       // call after container resize
 }
 ```
+
+## `NS.glsl` — `js/glsl.js`
+
+Pure data + functions, shared by the editor's highlighter and its autocomplete popup.
+**Must not touch the DOM** (or `document`/`localStorage`): `tests/glsl.test.js` loads it in Node via `vm` with only
+`window.ShaderSandbox` defined. Run `node --test tests/glsl.test.js`. Must load **before** `js/editor.js` in `index.html`.
+
+```js
+NS.glsl = {
+  KEYWORDS, TYPES, BUILTINS, CONSTANTS, UNIFORM_ALIASES: string[], // vocabulary (highlighter + completion)
+  SIGNATURES: { [builtin: string]: string },  // e.g. smoothstep -> "smoothstep(edge0, edge1, x)"
+  VARIABLES:  { [name: string]: string },     // u_time / iTime / gl_FragCoord … -> detail, e.g. "float · seconds since start"
+  wordAt(text, pos): { start, end, prefix }, // identifier span touching pos; prefix = text[start..pos)
+  inComment(text, pos): boolean,    // pos is inside // or /* */
+  completionContext(text, pos): null | { start, end, prefix },
+    // null in a comment, a number, or for the word directly after '#' or '.' ('#define SMOO' -> SMOO is completable)
+  documentIdentifiers(text): string[], // names declared in the code (whole file, not scope-aware)
+  suggest(text, pos, { minPrefix?, limit? }):
+    null | { start, end, prefix, items: Array<{ text, kind, detail }> }
+    // [start,end) = whole word to replace on accept; null = show nothing
+}
+```
+
+Editor behaviour: popup after 2+ identifier chars or `Ctrl+Space`; ↑/↓ select; `Tab`/`Enter` accept (undo-able,
+replaces the whole word); if the highlighted item equals the typed word, `Enter` inserts a newline and `Tab` just
+closes; `Escape` closes (and must not reach the document-level Escape handlers); click accepts.
+
+Compact mode (`body.is-compact`): the popup is `position: absolute` inside `.sse-editor` (never `fixed` — the
+`.m-shell` transform would offset it), stacked above the PiP card, rows ≥ 44px. Tapping an item accepts without
+blurring the textarea (keyboard stays up). `Enter`/Return never accepts — it closes the popup and inserts a newline.
+The popup closes on `replaceRangeLive` (dials), `insertText` (accessory bar) and textarea blur (tab switch).
 
 ## `NS.createShaderPreview(canvas, options)` — `js/shader-preview.js`
 
@@ -176,4 +208,5 @@ toast(msg, isErr)
 editor, preview, graph, windows   // existing objects
 ```
 Editor additions: `editor.insertText(str)` (undo-friendly), `editor.revealLine(n)`, `editor.indentSelection(dir)`.
+Autocomplete popup (editor-owned, see `NS.glsl`): absolute inside the editor, above the PiP card, 44px rows, tap-only accept (Return = newline); closed by dial edits, accessory-bar inserts and tab switches — no shell API needed.
 Graph addition: `graph.setCompact(bool)`.
