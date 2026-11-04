@@ -21,26 +21,28 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     return o;
   }
 
-  var KEYWORDS = wordSet(
-    'uniform varying attribute in out inout const if else for while do return ' +
-    'break continue discard struct precision highp mediump lowp switch case default ' +
-    'layout flat smooth centroid invariant'
-  );
-  var TYPES = wordSet(
-    'float int uint bool void vec2 vec3 vec4 ivec2 ivec3 ivec4 uvec2 uvec3 uvec4 ' +
-    'bvec2 bvec3 bvec4 mat2 mat3 mat4 mat2x2 mat2x3 mat2x4 mat3x2 mat3x3 mat3x4 ' +
-    'mat4x2 mat4x3 mat4x4 sampler2D sampler3D samplerCube sampler2DArray'
-  );
-  var BUILTINS = wordSet(
-    'radians degrees sin cos tan asin acos atan sinh cosh tanh pow exp log exp2 log2 ' +
-    'sqrt inversesqrt abs sign floor ceil trunc round fract mod min max clamp mix step ' +
-    'smoothstep length distance dot cross normalize faceforward reflect refract ' +
-    'matrixCompMult transpose inverse determinant lessThan lessThanEqual greaterThan ' +
-    'greaterThanEqual equal notEqual any all not texture2D texture2DLod textureCube ' +
-    'texture textureLod texelFetch textureSize dFdx dFdy fwidth'
-  );
-  var CONSTANTS = wordSet('true false');
-  var UNIFORM_ALIASES = wordSet('iTime iResolution iMouse iFrame iTimeDelta iDate');
+  // Vocabulary lives in js/glsl.js (must be loaded before this file). Missing
+  // arrays degrade to empty sets rather than throwing at load time.
+  var GLSL = NS.glsl || {};
+  function glslWords(name) {
+    var a = GLSL[name];
+    return wordSet(a && a.join ? a.join(' ') : '');
+  }
+  var KEYWORDS = glslWords('KEYWORDS');
+  var TYPES = glslWords('TYPES');
+  var BUILTINS = glslWords('BUILTINS');
+  var CONSTANTS = glslWords('CONSTANTS');
+  var UNIFORM_ALIASES = glslWords('UNIFORM_ALIASES');
+
+  // Autocomplete
+  var TAB_SIZE = 4;                 // must match `tab-size` on .sse-text
+  var AC_AUTO = { minPrefix: 2, limit: 12 };
+  var AC_MANUAL = { minPrefix: 0, limit: 50 };
+  var AC_KINDS = {                  // kind -> badge label
+    local: 'loc', variable: 'var', 'function': 'fn',
+    type: 'ty', keyword: 'kw', constant: 'c'
+  };
+  var acIdSeq = 0;
 
   // Single-pass tokenizer. Groups:
   //  1 line comment, 2 block comment (may be unterminated -> runs to end of input),
@@ -144,22 +146,46 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     ta.setAttribute('aria-label', 'GLSL fragment shader source');
     pre.setAttribute('aria-hidden', 'true');
 
+    // Hidden ruler for the monospace advance width. Sibling of <code>, so
+    // render() (which rewrites code.innerHTML) never removes it.
+    var measureEl = el('span', 'sse-measure');
+    measureEl.textContent = new Array(101).join('0');
+
+    // Completion popup. position: absolute inside the (position: relative,
+    // overflow: hidden) root, positioned in root coordinates. Not fixed: the
+    // compact shell (.m-shell) is transformed, which would make it the
+    // containing block of fixed descendants (offset by --vvt).
+    var acId = 'sse-ac-' + (++acIdSeq);
+    var acEl = el('div', 'sse-ac');
+    acEl.id = acId;
+    acEl.setAttribute('role', 'listbox');
+    acEl.setAttribute('aria-label', 'Completions');
+    acEl.style.display = 'none';
+    ta.setAttribute('aria-autocomplete', 'list');
+    ta.setAttribute('aria-haspopup', 'listbox');
+    ta.setAttribute('aria-controls', acId);
+    ta.setAttribute('aria-expanded', 'false');
+
     gutter.appendChild(gutterInner);
     bandsInner.appendChild(errBands);
     bandsInner.appendChild(activeBand);
     bands.appendChild(bandsInner);
     pre.appendChild(code);
+    pre.appendChild(measureEl);
     hl.appendChild(pre);
     main.appendChild(bands);
     main.appendChild(hl);
     main.appendChild(ta);
     root.appendChild(gutter);
     root.appendChild(main);
+    root.appendChild(acEl);
     container.appendChild(root);
 
     // ---- state -----------------------------------------------------------
     var lineHeight = 21;
     var padTop = 10;
+    var padLeft = 14;
+    var charWidth = 8.4;
     var lineCount = 0;
     var activeLine = -1;           // 1-based
     var errorMap = Object.create(null); // line -> [messages]
@@ -172,8 +198,13 @@ window.ShaderSandbox = window.ShaderSandbox || {};
       var cs = window.getComputedStyle(ta);
       var lh = parseFloat(cs.lineHeight);
       var pt = parseFloat(cs.paddingTop);
+      var pl = parseFloat(cs.paddingLeft);
       if (lh > 0) lineHeight = lh;
       if (pt >= 0 && !isNaN(pt)) padTop = pt;
+      if (pl >= 0 && !isNaN(pl)) padLeft = pl;
+      // 0 while the editor is display:none -> keep the previous value.
+      var w = measureEl.getBoundingClientRect().width;
+      if (w > 0) charWidth = w / 100;
     }
 
     // ---- rendering -------------------------------------------------------
@@ -251,6 +282,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     }
 
     function fullRefresh() {
+      acClose();
       measure();
       errorsDirty = true;
       render();
@@ -405,9 +437,263 @@ window.ShaderSandbox = window.ShaderSandbox || {};
       return true;
     }
 
+    // ---- autocomplete ----------------------------------------------------
+    // Data comes from NS.glsl.suggest(text, pos, opts) ->
+    //   null | { start, end, prefix, items: [{ text, kind, detail }] }
+    // [start, end) is the whole word around the caret; accepting replaces it.
+    var ac = {
+      open: false, manual: false,
+      items: [], sel: 0,
+      start: 0, end: 0, prefix: '',
+      pos: -1                       // caret position the list was computed for
+    };
+    var acSuppress = false;         // set while we insert a completion ourselves
+
+    // Phone shell (js/mobile.js): Return never accepts, tap is the only way.
+    function isCompact() {
+      return !!(document.body && document.body.classList.contains('is-compact'));
+    }
+
+    function acAvailable() {
+      return !!(NS.glsl && typeof NS.glsl.suggest === 'function');
+    }
+
+    // Visual column of the end of `s` (a line prefix), expanding tabs.
+    function visualCol(s) {
+      var col = 0;
+      for (var i = 0; i < s.length; i++) {
+        col = s.charCodeAt(i) === 9 ? col + TAB_SIZE - (col % TAB_SIZE) : col + 1;
+      }
+      return col;
+    }
+
+    function acClose() {
+      if (!ac.open) return;
+      ac.open = false;
+      ac.manual = false;
+      ac.items = [];
+      ac.pos = -1;
+      acEl.style.display = 'none';
+      acEl.style.maxHeight = '';
+      acEl.innerHTML = '';
+      ta.setAttribute('aria-expanded', 'false');
+      ta.removeAttribute('aria-activedescendant');
+    }
+
+    // (Re)compute suggestions for the caret. `manual` = opened via Ctrl+Space.
+    function acUpdate(manual) {
+      if (!acAvailable() || ta.selectionStart !== ta.selectionEnd) { acClose(); return; }
+      var pos = ta.selectionStart;
+      var res = null;
+      try {
+        res = NS.glsl.suggest(ta.value, pos, manual ? AC_MANUAL : AC_AUTO);
+      } catch (err) {
+        res = null;
+      }
+      if (!res || !res.items || !res.items.length) { acClose(); return; }
+      if (!ac.open) measure();      // cheap; picks up late font loads
+      ac.open = true;
+      ac.manual = !!manual;
+      ac.items = res.items;
+      ac.sel = 0;
+      ac.start = res.start;
+      ac.end = res.end;
+      ac.prefix = res.prefix != null ? String(res.prefix) : ta.value.slice(res.start, pos);
+      ac.pos = pos;
+      acRender();
+      acPosition();
+      acEl.scrollTop = 0;           // after display:block, else it is a no-op
+    }
+
+    function acRender() {
+      var pl = ac.prefix.length;
+      var html = '';
+      for (var i = 0; i < ac.items.length; i++) {
+        var it = ac.items[i];
+        var text = String(it.text);
+        var kind = AC_KINDS[it.kind] ? it.kind : 'local';
+        var head = text.slice(0, pl);
+        var label = pl && head.toLowerCase() === ac.prefix.toLowerCase()
+          ? '<b>' + esc(head) + '</b>' + esc(text.slice(pl))
+          : esc(text);
+        html += '<div class="sse-ac-item' + (i === ac.sel ? ' is-sel' : '') + '" role="option"' +
+          ' id="' + acId + '-' + i + '" data-index="' + i + '"' +
+          ' aria-selected="' + (i === ac.sel) + '">' +
+          '<span class="sse-ac-kind sse-ac-k-' + kind + '" title="' + kind + '">' + AC_KINDS[kind] + '</span>' +
+          '<span class="sse-ac-label">' + label + '</span>' +
+          (it.detail ? '<span class="sse-ac-detail">' + esc(String(it.detail)) + '</span>' : '') +
+          '</div>';
+      }
+      acEl.innerHTML = html;
+      ta.setAttribute('aria-expanded', 'true');
+      ta.setAttribute('aria-activedescendant', acId + '-' + ac.sel);
+    }
+
+    function acSelect(i) {
+      var n = ac.items.length;
+      if (!n) return;
+      i = ((i % n) + n) % n;
+      var kids = acEl.children;
+      if (kids[ac.sel]) {
+        kids[ac.sel].classList.remove('is-sel');
+        kids[ac.sel].setAttribute('aria-selected', 'false');
+      }
+      ac.sel = i;
+      var item = kids[i];
+      if (!item) return;
+      item.classList.add('is-sel');
+      item.setAttribute('aria-selected', 'true');
+      ta.setAttribute('aria-activedescendant', item.id);
+      // Equivalent of scrollIntoView({ block: 'nearest' }) but confined to the
+      // popup: never scrolls the (overflow: hidden) editor root or the page.
+      var top = item.offsetTop, bottom = top + item.offsetHeight;
+      if (top < acEl.scrollTop) acEl.scrollTop = top;
+      else if (bottom > acEl.scrollTop + acEl.clientHeight) acEl.scrollTop = bottom - acEl.clientHeight;
+    }
+
+    // Place the popup under the start of the word (flip above if needed).
+    // Coordinates are relative to the root (the popup's containing block), so
+    // the same code works on desktop and inside the transformed phone shell.
+    // `fromScroll`: called because the textarea scrolled; if the anchor line
+    // is now outside the visible area (e.g. wheel scroll), close instead.
+    function acPosition(fromScroll) {
+      if (!ac.open) return;
+      var v = ta.value;
+      var ls = lineStartOf(v, ac.start);
+      var col = visualCol(v.slice(ls, ac.start));
+      var line = lineIndexAt(v, ac.start);
+      var r = ta.getBoundingClientRect();
+      var lineTopVp = r.top + ta.clientTop + padTop + line * lineHeight - ta.scrollTop;
+      if (fromScroll && (lineTopVp + lineHeight <= r.top || lineTopVp >= r.bottom)) { acClose(); return; }
+
+      var rr = root.getBoundingClientRect();
+      var ox = rr.left + root.clientLeft, oy = rr.top + root.clientTop;   // padding-box origin
+      var x = r.left + ta.clientLeft + padLeft + col * charWidth - ta.scrollLeft - ox;
+      var lineTop = lineTopVp - oy;
+      var lineBottom = lineTop + lineHeight;
+      var rw = root.clientWidth, rh = root.clientHeight;
+
+      var keepScroll = acEl.scrollTop;
+      acEl.style.maxHeight = '';
+      acEl.style.display = 'block';
+      var w = acEl.offsetWidth, h = acEl.offsetHeight;
+      var m = 4, gap = 2;
+      var below = rh - m - (lineBottom + gap);       // room under the line
+      var above = lineTop - gap - m;                  // room over the line
+      var top;
+      if (h <= below || below >= above) {
+        if (h > below && below > 0) { acEl.style.maxHeight = Math.floor(below) + 'px'; h = acEl.offsetHeight; }
+        top = lineBottom + gap;
+      } else {
+        if (h > above) { acEl.style.maxHeight = Math.floor(above) + 'px'; h = acEl.offsetHeight; }
+        top = lineTop - gap - h;                      // flip above
+      }
+      top = Math.max(m, Math.min(top, rh - h - m));
+      var left = Math.max(m, Math.min(x - 6, rw - w - m));                   // -6: badge gutter
+      acEl.style.left = Math.round(left) + 'px';
+      acEl.style.top = Math.round(top) + 'px';
+      acEl.scrollTop = keepScroll;
+      acEl.classList.toggle('is-above', top < lineTop);
+    }
+
+    function acAccept(i) {
+      var it = ac.items[i];
+      if (!it) { acClose(); return; }
+      var text = String(it.text);
+      var start = ac.start, end = ac.end;
+      acClose();
+      acSuppress = true;
+      try {
+        replaceRange(start, end, text, start + text.length);
+      } finally {
+        acSuppress = false;
+      }
+    }
+
+    // Called after every input event (after render()).
+    function acOnInput(e) {
+      if (acSuppress) return;
+      var type = (e && e.inputType) || '';
+      if (e && e.isComposing) { acClose(); return; }
+      if (type === 'insertText' && typeof e.data === 'string' && /^\w$/.test(e.data)) {
+        acUpdate(ac.open ? ac.manual : false);
+      } else if (type.indexOf('delete') === 0) {
+        if (ac.open) acUpdate(ac.manual);
+      } else {
+        acClose();                  // paste, Enter, Tab indent, non-word chars, IME...
+      }
+    }
+
+    // Caret moved without an input event (arrows, Home/End...).
+    function acCaretCheck() {
+      if (!ac.open) return;
+      var s = ta.selectionStart, e2 = ta.selectionEnd;
+      if (s !== e2) { acClose(); return; }
+      if (s === ac.pos) return;
+      // Left the word being completed -> close; otherwise recompute.
+      if (s < ac.start || s > ac.end) { acClose(); return; }
+      acUpdate(ac.manual);
+    }
+
+    function acKeydown(e) {
+      var mod = e.ctrlKey || e.metaKey;
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey &&
+          (e.code === 'Space' || e.key === ' ')) {
+        e.preventDefault();
+        acUpdate(true);
+        return true;
+      }
+      if (!ac.open || mod || e.altKey) return false;
+      switch (e.key) {
+        case 'ArrowDown':
+        case 'ArrowUp':
+          if (e.shiftKey) { acClose(); return false; }
+          e.preventDefault();
+          acSelect(ac.sel + (e.key === 'ArrowDown' ? 1 : -1));
+          return true;
+        case 'Escape':
+          e.preventDefault();
+          e.stopPropagation();      // keep app.js (ctx menu / GIF panel) out of it
+          acClose();
+          return true;
+        case 'Enter':
+        case 'Tab':
+          // Shift+Enter/Tab, or Return on a phone: close and do the normal thing.
+          if (e.shiftKey || (e.key === 'Enter' && isCompact())) { acClose(); return false; }
+          var it = ac.items[ac.sel];
+          if (it && String(it.text) === ac.prefix) {
+            // Nothing to complete: Enter -> normal newline, Tab -> just close.
+            acClose();
+            if (e.key === 'Tab') { e.preventDefault(); return true; }
+            return false;
+          }
+          e.preventDefault();
+          acAccept(ac.sel);
+          return true;
+      }
+      return false;
+    }
+
+    // Never let the popup take focus: blurring the textarea would close the
+    // popup and, on phones, dismiss the keyboard (mobile.js reacts to blur).
+    // pointerdown/mousedown are cancelled (touch scrolling of the list still
+    // works); a completion is accepted on click, i.e. only for a real tap /
+    // click on an item, never at the end of a scroll gesture.
+    function acKeepFocus(e) { e.preventDefault(); }
+    acEl.addEventListener('pointerdown', acKeepFocus);
+    acEl.addEventListener('mousedown', acKeepFocus);
+    acEl.addEventListener('click', function (e) {
+      e.preventDefault();
+      if (e.button) return;
+      var t = e.target;
+      while (t && t !== acEl && !(t.classList && t.classList.contains('sse-ac-item'))) t = t.parentNode;
+      if (t && t !== acEl && ac.open) acAccept(+t.getAttribute('data-index'));
+    });
+
     // ---- events ----------------------------------------------------------
     ta.addEventListener('keydown', function (e) {
       if (e.isComposing || e.keyCode === 229) return;
+      if (acKeydown(e)) return;
       var mod = e.ctrlKey || e.metaKey;
 
       if (e.key === 'Tab' && !mod && !e.altKey) {
@@ -434,21 +720,26 @@ window.ShaderSandbox = window.ShaderSandbox || {};
       }
     });
 
-    ta.addEventListener('input', function () {
+    ta.addEventListener('input', function (e) {
       render();
       updateActiveLine();
       syncScroll();
+      acOnInput(e);
       onChange(ta.value);
     });
 
-    ta.addEventListener('scroll', syncScroll);
-    ta.addEventListener('keyup', function () { updateActiveLine(); });
+    ta.addEventListener('scroll', function () {
+      syncScroll();
+      if (ac.open) acPosition(true);
+    });
+    ta.addEventListener('keyup', function () { updateActiveLine(); acCaretCheck(); });
     ta.addEventListener('mouseup', function () { updateActiveLine(); });
-    ta.addEventListener('select', function () { updateActiveLine(); });
+    ta.addEventListener('mousedown', acClose);
+    ta.addEventListener('select', function () { updateActiveLine(); acCaretCheck(); });
     ta.addEventListener('focus', function () { root.classList.add('sse-focused'); updateActiveLine(); });
-    ta.addEventListener('blur', function () { root.classList.remove('sse-focused'); });
+    ta.addEventListener('blur', function () { root.classList.remove('sse-focused'); acClose(); });
     document.addEventListener('selectionchange', function () {
-      if (document.activeElement === ta) updateActiveLine();
+      if (document.activeElement === ta) { updateActiveLine(); acCaretCheck(); }
     });
 
     // Clicking a line number selects that line.
@@ -467,7 +758,10 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     });
 
     if (typeof ResizeObserver === 'function') {
-      new ResizeObserver(function () { syncScroll(); }).observe(main);
+      new ResizeObserver(function () {
+        syncScroll();
+        if (ac.open) acPosition(true);    // e.g. the phone keyboard shrank the editor
+      }).observe(main);
     }
 
     fullRefresh();
@@ -476,6 +770,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
     return {
       getValue: function () { return ta.value; },
       setValue: function (codeStr) {
+        acClose();
         ta.value = codeStr != null ? String(codeStr) : '';
         render();
         updateActiveLine(true);
@@ -528,6 +823,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
        * Keeps focus/keyboard as-is, sets the selection, re-renders and fires onChange once.
        */
       replaceRangeLive: function (start, end, text, selStart, selEnd) {
+        acClose();                              // no input event fires here
         var keepTop = ta.scrollTop, keepLeft = ta.scrollLeft;
         ta.setRangeText(String(text), start, end, 'preserve');
         if (selStart != null) ta.setSelectionRange(selStart, selEnd != null ? selEnd : selStart);
@@ -545,6 +841,7 @@ window.ShaderSandbox = window.ShaderSandbox || {};
       },
       /** Select line n (1-based) and scroll it into view, without forcing the keyboard open. */
       revealLine: function (n) {
+        acClose();
         var v = ta.value, lines = v.split('\n');
         n = Math.max(1, Math.min(lines.length, Math.floor(n) || 1));
         var start = 0;
